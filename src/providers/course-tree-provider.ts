@@ -60,7 +60,12 @@ class LessonTreeItem extends vscode.TreeItem {
     }
 
     this.contextValue = 'lesson';
-    // No command - expand instead of open
+    // Add command so selecting a lesson opens it in the webview
+    this.command = {
+      command: 'csLearningPlatform.openLesson',
+      title: 'Open Lesson',
+      arguments: [this.courseId, this.topicId, this.lesson.id],
+    };
   }
 }
 

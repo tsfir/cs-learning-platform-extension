@@ -1,3 +1,5 @@
+/*! ./SectionItem */
+
 /*! ./cjs/react-dom-client.development.js */
 
 /*! ./cjs/react-dom.development.js */
@@ -5,6 +7,8 @@
 /*! ./cjs/react.development.js */
 
 /*! ./cjs/scheduler.development.js */
+
+/*! ./components/LessonContent */
 
 /*! react */
 

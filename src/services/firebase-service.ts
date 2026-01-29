@@ -24,6 +24,8 @@ import {
   query,
   where,
   orderBy,
+  addDoc,
+  serverTimestamp,
   type Firestore,
   type Unsubscribe,
 } from 'firebase/firestore';
@@ -263,6 +265,51 @@ export class FirebaseService {
     return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as StudentAnswer;
   }
 
+  /**
+   * Save student answer for a specific section
+   */
+  async saveStudentAnswer(
+    sectionId: string,
+    userId: string,
+    lessonId: string,
+    content: string,
+    type: 'code' | 'interactive' = 'code',
+    courseId?: string
+  ): Promise<void> {
+    const q = query(
+      collection(this.db!, 'studentAnswers'),
+      where('sectionId', '==', sectionId),
+      where('userId', '==', userId)
+    );
+    const snapshot = await getDocs(q);
+
+    if (!snapshot.empty) {
+      // Update existing answer
+      const docRef = snapshot.docs[0].ref;
+      await updateDoc(docRef, {
+        answer: content,
+        updatedAt: serverTimestamp()
+      });
+    } else {
+      // Create new answer
+      const data: any = {
+        sectionId,
+        userId,
+        lessonId,
+        answer: content,
+        type,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      if (courseId) {
+        data.courseId = courseId;
+      }
+
+      await addDoc(collection(this.db!, 'studentAnswers'), data);
+    }
+  }
+
   // Real-time listeners
   subscribeToLesson(
     lessonId: string,
@@ -333,6 +380,55 @@ export class FirebaseService {
     const storageRef = ref(this.storage!, path);
     await uploadBytes(storageRef, file, metadata);
     return await getDownloadURL(storageRef);
+  }
+
+  /**
+   * Save student grade and feedback
+   */
+  async saveStudentGrade(
+    lessonId: string,
+    sectionId: string,
+    userId: string,
+    grade: number,
+    feedback: string
+  ): Promise<void> {
+
+    try {
+      const answersRef = collection(this.db!, 'studentAnswers');
+      const q = query(
+        answersRef,
+        where('lessonId', '==', lessonId),
+        where('sectionId', '==', sectionId),
+        where('userId', '==', userId)
+      );
+
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        // Update existing
+        const docRef = snapshot.docs[0].ref;
+        await updateDoc(docRef, {
+          grade,
+          feedback,
+          gradedAt: serverTimestamp() // Use server timestamp
+        });
+      } else {
+        // If answer doesn't exist (e.g. graded without saving?), create it
+        // This case might happen if grading file content directly without explicit submit
+        await addDoc(answersRef, {
+          lessonId,
+          sectionId,
+          userId,
+          grade,
+          feedback,
+          gradedAt: serverTimestamp(),
+          createdAt: serverTimestamp()
+        });
+      }
+    } catch (error) {
+      console.error('Error saving grade:', error);
+      throw error;
+    }
   }
 
   dispose() {

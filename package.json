@@ -5,15 +5,14 @@
   "version": "0.1.0",
   "publisher": "cs-learning-platform",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.90.0"
   },
   "categories": [
     "Education",
     "Programming Languages"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onView:csLearningPlatform.lessonView"
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -40,6 +39,11 @@
       {
         "command": "csLearningPlatform.openLesson",
         "title": "CS Platform: Open Lesson"
+      },
+      {
+        "command": "csLearningPlatform.checkAnswer",
+        "title": "Check Answer",
+        "icon": "$(check)"
       },
       {
         "command": "csLearningPlatform.submitExercise",
@@ -88,12 +92,33 @@
         }
       ]
     },
+    "chatParticipants": [
+      {
+        "id": "cs-learning-platform.oakley",
+        "name": "oakley",
+        "description": "Oakley AI Tutor",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "grade",
+            "description": "Grade the current exercise"
+          }
+        ]
+      }
+    ],
     "menus": {
       "view/title": [
         {
           "command": "csLearningPlatform.refreshCourses",
           "when": "view == csLearningPlatform.coursesView",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "csLearningPlatform.checkAnswer",
+          "when": "view == csLearningPlatform.coursesView && viewItem == exercise",
+          "group": "inline"
         }
       ]
     },
@@ -104,6 +129,10 @@
           "type": "string",
           "default": "~/cs-platform-workspace",
           "description": "Root directory for course workspaces"
+        },
+        "csLearningPlatform.geminiApiKey": {
+          "type": "string",
+          "description": "API Key for Gemini AI (Google AI Studio). Required for Tutor/Grading."
         },
         "csLearningPlatform.autoSync": {
           "type": "boolean",
@@ -128,7 +157,7 @@
   "devDependencies": {
     "@types/node": "^20.10.6",
     "@types/uuid": "^10.0.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.90.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.3.3",
     "webpack": "^5.89.0",

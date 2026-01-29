@@ -126,6 +126,8 @@
 
 /*! ./channelz */
 
+/*! ./chat/oakley-participant */
+
 /*! ./client */
 
 /*! ./client-h1.js */
@@ -424,6 +426,8 @@
 
 /*! ./services/firebase-service */
 
+/*! ./services/gemini-service */
+
 /*! ./sha1.js */
 
 /*! ./src */
@@ -447,6 +451,8 @@
 /*! ./subchannel-pool */
 
 /*! ./symbols */
+
+/*! ./sync/file-sync-manager */
 
 /*! ./tls-helpers */
 

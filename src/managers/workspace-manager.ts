@@ -94,6 +94,18 @@ export class WorkspaceManager {
       return;
     }
 
+    // If we've already set up this lesson workspace, no need to re-run setup or show notifications.
+    if (
+      this.currentWorkspace &&
+      this.currentWorkspace.courseId === courseId &&
+      this.currentWorkspace.topicId === topicId &&
+      this.currentWorkspace.lessonId === lessonId
+    ) {
+      // Already prepared for this lesson; silently return so actions like opening different
+      // exercises in the same lesson don't trigger workspace change notifications.
+      return;
+    }
+
     vscode.window.showInformationMessage('Opening lesson workspace...');
 
     // Fetch course, topic, and lesson to get slugs

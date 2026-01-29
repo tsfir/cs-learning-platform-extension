@@ -17,6 +17,11 @@ export class LessonWebviewProvider implements vscode.WebviewViewProvider {
         lessonId: string;
     } | undefined;
 
+    private _currentContent: {
+        lessonName: string;
+        sections: Section[];
+    } | undefined;
+
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext,
@@ -35,6 +40,17 @@ export class LessonWebviewProvider implements vscode.WebviewViewProvider {
         };
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+
+        // If we have cached content, send it to the view once it's ready
+        if (this._currentContent) {
+            // Use a small timeout to ensure the webview script has loaded
+            setTimeout(() => {
+                this._postMessage({
+                    type: 'updateContext',
+                    payload: this._currentContent
+                });
+            }, 500);
+        }
 
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(message => {
@@ -67,24 +83,36 @@ export class LessonWebviewProvider implements vscode.WebviewViewProvider {
         lessonName: string,
         sections: Section[]
     ) {
+        console.log('Provider: updateLessonContent called', { lessonName, sectionsLength: sections.length });
         this._currentContext = { courseId, topicId, lessonId };
+        this._currentContent = { lessonName, sections };
 
+        this._postMessage({
+            type: 'updateContext',
+            payload: {
+                lessonName,
+                sections
+            }
+        });
+
+        // Try to show the view
         if (this._view) {
-            this._view.webview.postMessage({
-                type: 'updateContext',
-                payload: {
-                    lessonName,
-                    sections
-                }
-            });
-            // Also make sure it's visible
             this._view.show?.(true);
+        } else {
+            // If view is not resolved, we might want to focus it specifically
+            vscode.commands.executeCommand('csLearningPlatform.lessonView.focus');
+        }
+    }
+
+    private _postMessage(message: any) {
+        if (this._view) {
+            this._view.webview.postMessage(message);
         }
     }
 
     private _openFile(filePath: string) {
         // Check if absolute or relative
-        // This part depends on how sections define the file path. 
+        // This part depends on how sections define the file path.
         // For now, let's assume it's relative to the workspace root if not absolute.
 
         // Note: In the web app, 'code' sections might just contain snippet text, 

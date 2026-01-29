@@ -27,7 +27,8 @@ const SectionItem: React.FC<Props> = ({ section, vscode }) => {
         padding: '1rem',
         backgroundColor: 'var(--vscode-editor-background)',
         border: '1px solid var(--vscode-widget-border)',
-        borderRadius: '4px'
+        borderRadius: '4px',
+        overflow: 'hidden' as const
     };
 
     const titleStyle = {
@@ -39,15 +40,27 @@ const SectionItem: React.FC<Props> = ({ section, vscode }) => {
 
     const contentStyle = {
         lineHeight: '1.5',
-        color: 'var(--vscode-editor-foreground)'
+        color: 'var(--vscode-editor-foreground)',
+        overflow: 'auto' as const
     };
 
-    // Simple Markdown renderer placeholder (since we don't have a markdown lib installed yet)
-    // In a real app we'd use react-markdown
+    const codeStyle = {
+        backgroundColor: 'var(--vscode-textBlockQuote-background)',
+        padding: '0.5rem',
+        borderRadius: '3px',
+        overflowX: 'auto' as const,
+        fontSize: '0.9em',
+        fontFamily: 'monospace',
+        whiteSpace: 'pre-wrap' as const,
+        wordWrap: 'break-word' as const,
+        maxWidth: '100%',
+        display: 'block'
+    };
+
+    // Render rich HTML content from the lesson. Use carefully; content should be trusted or sanitized.
     const renderContent = (content: string) => {
+        if (!content) return null;
         return <div dangerouslySetInnerHTML={{ __html: content }} />;
-        // WARNING: This is unsafe without sanitization, but for internal content it's "okay" for a prototype.
-        // Ideally we should use a markdown library.
     };
 
     return (
@@ -55,9 +68,7 @@ const SectionItem: React.FC<Props> = ({ section, vscode }) => {
             <h3 style={titleStyle}>{section.title}</h3>
 
             <div style={contentStyle}>
-                {section.type === 'text' && (
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{section.content}</div>
-                )}
+                {section.type === 'text' && renderContent(section.content)}
 
                 {section.type === 'image' && (
                     <img src={section.content} alt={section.title} style={{ maxWidth: '100%' }} />
@@ -65,9 +76,9 @@ const SectionItem: React.FC<Props> = ({ section, vscode }) => {
 
                 {(section.type === 'code' || section.type === 'interactive') && (
                     <div>
-                        <p style={{ fontStyle: 'italic', marginBottom: '10px' }}>
-                            {section.content}
-                        </p>
+                        <div style={{ marginBottom: '10px' }}>
+                            {renderContent(section.content)}
+                        </div>
                         <button
                             onClick={handleOpenFile}
                             style={{

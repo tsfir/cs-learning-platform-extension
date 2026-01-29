@@ -4,6 +4,10 @@ import { WorkspaceManager } from './managers/workspace-manager';
 import { CourseTreeProvider } from './providers/course-tree-provider';
 import { FirebaseAuthenticationProvider } from './auth/firebase-auth-provider';
 import { LessonWebviewProvider } from './providers/lesson-webview-provider';
+import { OakleyChatParticipant } from './chat/oakley-participant';
+import { GeminiService } from './services/gemini-service';
+import { FileSyncManager } from './sync/file-sync-manager';
+import * as fs from 'fs/promises'; // for reading exercise file
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('CS Learning Platform extension is now active!');
@@ -28,6 +32,13 @@ export async function activate(context: vscode.ExtensionContext) {
   // Initialize workspace manager
   const workspaceManager = new WorkspaceManager(context, firebaseService);
 
+  // Initialize Gemini Service
+  const geminiService = new GeminiService(context);
+
+  // Initialize Chat Participant
+  const chatParticipant = new OakleyChatParticipant(context, geminiService, firebaseService);
+  chatParticipant.register();
+
   // Initialize course tree provider
   const courseTreeProvider = new CourseTreeProvider(firebaseService, workspaceManager);
 
@@ -48,7 +59,34 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Register commands
-  registerCommands(context, firebaseService, workspaceManager, courseTreeProvider, lessonProvider);
+  const state: { fileSyncManager: FileSyncManager | null } = { fileSyncManager: null };
+  registerCommands(context, firebaseService, workspaceManager, courseTreeProvider, lessonProvider, chatParticipant, state);
+
+  // Hook into document save events to trigger manual syncs (more reliable than file watcher)
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (document) => {
+      if (state.fileSyncManager && document.fileName.includes('exercise_')) {
+        console.log(`[Extension] Document saved: ${document.fileName}`);
+        await state.fileSyncManager.syncCurrentFile(document.fileName);
+      }
+    })
+  );
+
+  // Handle workspace changes to stop syncing when switching workspaces
+  vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    if (state.fileSyncManager) {
+      state.fileSyncManager.stopWatching();
+    }
+  });
+
+  // Create a global subscription for cleanup
+  context.subscriptions.push({
+    dispose: () => {
+      if (state.fileSyncManager) {
+        state.fileSyncManager.dispose();
+      }
+    }
+  });
 
   // Check authentication on startup
   const user = firebaseService.getCurrentUser();
@@ -72,7 +110,9 @@ function registerCommands(
   firebase: FirebaseService,
   workspace: WorkspaceManager,
   courseTree: CourseTreeProvider,
-  lessonProvider: LessonWebviewProvider
+  lessonProvider: LessonWebviewProvider,
+  chatParticipant: OakleyChatParticipant,
+  state: { fileSyncManager: FileSyncManager | null }
 ) {
   // Authentication commands
   context.subscriptions.push(
@@ -157,8 +197,10 @@ function registerCommands(
           await workspace.openLesson(courseId, topicId, lessonId);
 
           // Fetch lesson content to update the webview
+          console.log(`Extension: fetching data for lesson ${lessonId}`);
           const lesson = await firebase.getLesson(lessonId);
           const sections = await firebase.getSections(lessonId);
+          console.log(`Extension: fetched lesson: ${!!lesson}, sections: ${sections?.length}`);
 
           if (lesson) {
             lessonProvider.updateLessonContent(
@@ -168,6 +210,21 @@ function registerCommands(
               lesson.lessonName,
               sections
             );
+
+            // Start file sync for this lesson
+            const currentWorkspace = workspace.getCurrentWorkspace();
+            if (currentWorkspace && sections) {
+              if (state.fileSyncManager) {
+                state.fileSyncManager.stopWatching();
+              }
+              state.fileSyncManager = new FileSyncManager(firebase, workspace);
+              state.fileSyncManager.startWatchingWithState(
+                currentWorkspace.exercisesPath,
+                lessonId,
+                sections,
+                courseId
+              );
+            }
           }
         } catch (error: any) {
           vscode.window.showErrorMessage(
@@ -201,7 +258,59 @@ function registerCommands(
     )
   );
 
-  // Refresh course tree command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'csLearningPlatform.checkAnswer',
+      async (item: any) => { // Receives the TreeItem argument
+
+        // The argument 'item' corresponds to what ExerciseTreeItem passes or the item itself.
+        // In getExercises, we passed arguments: [courseId, topicId, lessonId, section].
+        // However, triggered from context menu, the first arg is the tree item itself usually.
+        // But wait, the context menu command 'arguments' is NOT automatically passed if standard selection is used?
+        // Actually, for a tree view item context menu, the item itself is passed.
+        // Let's assume 'item' is the ExerciseTreeItem which has public properties: section, courseId, etc.
+
+        // If the item has the properties we need (we made them public in CourseTreeProvider)
+        if (!item || !item.section) {
+          vscode.window.showErrorMessage("Could not identify exercise context.");
+          return;
+        }
+
+        const section = item.section;
+        const courseId = item.courseId;
+        const lessonId = item.lessonId;
+
+        // Get the file path
+        const filePath = workspace.getExerciseFilePath(section);
+        if (!filePath) {
+          vscode.window.showErrorMessage("Exercise file path not found. Please open the lesson first.");
+          return;
+        }
+
+        try {
+          // Read student code
+          const studentCode = await fs.readFile(filePath, 'utf-8');
+
+          // Set context for chat
+          chatParticipant.setGradingContext({
+            courseId,
+            lessonId,
+            sectionId: section.id,
+            question: section.content || section.title,
+            studentAnswer: studentCode,
+            maxPoints: section.points || 10,
+            language: section.language || 'text'
+          });
+
+          // Open Chat
+          await vscode.commands.executeCommand('workbench.action.chat.open', '@oakley grade');
+
+        } catch (error: any) {
+          vscode.window.showErrorMessage(`Failed to check answer: ${error.message}`);
+        }
+      }
+    )
+  );
   context.subscriptions.push(
     vscode.commands.registerCommand('csLearningPlatform.refreshCourses', () => {
       courseTree.refresh();
