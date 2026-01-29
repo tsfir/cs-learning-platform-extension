@@ -2,9 +2,10 @@ import * as vscode from 'vscode';
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
-  signInWithCustomToken,
+  signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential, // Added for correct SDK auth
   setPersistence,
   indexedDBLocalPersistence,
   type Auth,
@@ -42,7 +43,7 @@ export class FirebaseService {
   private storage: FirebaseStorage | null = null;
   private authListeners: Unsubscribe[] = [];
 
-  constructor(private context: vscode.ExtensionContext) {}
+  constructor(private context: vscode.ExtensionContext) { }
 
   async initialize(): Promise<void> {
     // Firebase config from web app
@@ -92,38 +93,37 @@ export class FirebaseService {
 
   async signInWithGoogle(): Promise<void> {
     try {
-      // For VS Code extensions, popup-based OAuth doesn't work
-      // We'll guide users to sign in via web app with Google,
-      // then use email/password in the extension
-
-      const choice = await vscode.window.showInformationMessage(
-        'Google Sign-In requires opening the web app. Would you like to continue?',
-        'Open Web App',
-        'Use Email/Password Instead',
-        'Cancel'
+      // Use VS Code's authentication API with our Firebase provider
+      // The auth provider handles the OAuth flow via the web app and validates the token
+      const session = await vscode.authentication.getSession(
+        'firebase-google',
+        ['email', 'profile'],
+        { createIfNone: true }
       );
 
-      if (choice === 'Open Web App') {
-        // Open the web app login page
-        await vscode.env.openExternal(
-          vscode.Uri.parse('https://easycslearning-web-app.firebaseapp.com/login')
-        );
+      if (session) {
+        // Create a Firebase credential from the token
+        const credential = GoogleAuthProvider.credential(session.accessToken);
+
+        // Sign in to the Firebase SDK with the credential
+        await signInWithCredential(this.auth!, credential);
+
+        // Store the user info from the validated session
+        this.context.globalState.update('userId', session.account.id);
+        this.context.globalState.update('userEmail', session.account.label);
 
         vscode.window.showInformationMessage(
-          'After signing in with Google on the web:\n' +
-          '1. Create an email/password in Settings (if you haven\'t)\n' +
-          '2. Return here and use "Sign in with Email/Password"\n\n' +
-          'This limitation will be fixed in a future update.',
-          'Got it'
+          `Successfully signed in with Google as ${session.account.label}!`
         );
-      } else if (choice === 'Use Email/Password Instead') {
-        // Fall back to email/password
-        await this.signInWithEmailPassword();
       }
     } catch (error: any) {
-      vscode.window.showErrorMessage(
-        `Sign in failed: ${error.message || 'Unknown error'}`
-      );
+      if (error.message === 'User cancelled') {
+        vscode.window.showWarningMessage('Sign in cancelled');
+      } else {
+        vscode.window.showErrorMessage(
+          `Google sign in failed: ${error.message || 'Unknown error'}`
+        );
+      }
       throw error;
     }
   }

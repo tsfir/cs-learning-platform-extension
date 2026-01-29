@@ -42,7 +42,7 @@ export class FirebaseAuthenticationProvider implements vscode.AuthenticationProv
   /**
    * Get existing sessions
    */
-  public async getSessions(scopes?: string[]): Promise<readonly vscode.AuthenticationSession[]> {
+  public async getSessions(scopes?: readonly string[]): Promise<vscode.AuthenticationSession[]> {
     const allSessions = await this.context.secrets.get(SESSIONS_SECRET_KEY);
 
     if (allSessions) {
@@ -51,7 +51,7 @@ export class FirebaseAuthenticationProvider implements vscode.AuthenticationProv
         id: session.id,
         accessToken: session.accessToken,
         account: session.account,
-        scopes: session.scopes || scopes || []
+        scopes: session.scopes || Array.from(scopes || [])
       }));
     }
 
@@ -225,7 +225,7 @@ export class FirebaseAuthenticationProvider implements vscode.AuthenticationProv
         }
       );
 
-      const data = await response.json();
+      const data: any = await response.json();
 
       if (data.users && data.users.length > 0) {
         const user = data.users[0];

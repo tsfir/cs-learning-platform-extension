@@ -100,6 +100,8 @@
 
 /*! ./api-upgrade */
 
+/*! ./auth/firebase-auth-provider */
+
 /*! ./backoff-timeout */
 
 /*! ./body */
@@ -310,6 +312,10 @@
 
 /*! ./mapfield */
 
+/*! ./max.js */
+
+/*! ./md5.js */
+
 /*! ./message */
 
 /*! ./metadata */
@@ -330,6 +336,10 @@
 
 /*! ./namespace */
 
+/*! ./native.js */
+
+/*! ./nil.js */
+
 /*! ./node.js */
 
 /*! ./object */
@@ -337,6 +347,8 @@
 /*! ./oneof */
 
 /*! ./parse */
+
+/*! ./parse.js */
 
 /*! ./pending-interceptors-formatter */
 
@@ -356,6 +368,8 @@
 
 /*! ./providers/course-tree-provider */
 
+/*! ./providers/lesson-webview-provider */
+
 /*! ./proxy-agent */
 
 /*! ./readable */
@@ -365,6 +379,8 @@
 /*! ./reader_buffer */
 
 /*! ./receiver */
+
+/*! ./regex.js */
 
 /*! ./request */
 
@@ -383,6 +399,8 @@
 /*! ./response */
 
 /*! ./retrying-call */
+
+/*! ./rng.js */
 
 /*! ./root */
 
@@ -406,6 +424,8 @@
 
 /*! ./services/firebase-service */
 
+/*! ./sha1.js */
+
 /*! ./src */
 
 /*! ./src/index */
@@ -413,6 +433,8 @@
 /*! ./status-builder */
 
 /*! ./stream-decoder */
+
+/*! ./stringify.js */
 
 /*! ./subchannel */
 
@@ -448,7 +470,29 @@
 
 /*! ./utils */
 
+/*! ./v1.js */
+
+/*! ./v1ToV6.js */
+
+/*! ./v3.js */
+
+/*! ./v35.js */
+
+/*! ./v4.js */
+
+/*! ./v5.js */
+
+/*! ./v6.js */
+
+/*! ./v6ToV1.js */
+
+/*! ./v7.js */
+
+/*! ./validate.js */
+
 /*! ./verifier */
+
+/*! ./version.js */
 
 /*! ./webidl */
 
@@ -621,6 +665,8 @@
 /*! url */
 
 /*! util */
+
+/*! uuid */
 
 /*! vscode */
 

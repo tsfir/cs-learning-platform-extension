@@ -2,9 +2,15 @@ import * as vscode from 'vscode';
 import { FirebaseService } from './services/firebase-service';
 import { WorkspaceManager } from './managers/workspace-manager';
 import { CourseTreeProvider } from './providers/course-tree-provider';
+import { FirebaseAuthenticationProvider } from './auth/firebase-auth-provider';
+import { LessonWebviewProvider } from './providers/lesson-webview-provider';
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('CS Learning Platform extension is now active!');
+
+  // Register Firebase authentication provider
+  const authProvider = new FirebaseAuthenticationProvider(context);
+  context.subscriptions.push(authProvider);
 
   // Initialize Firebase
   const firebaseService = new FirebaseService(context);
@@ -31,8 +37,18 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(treeView);
 
+  // Register Webview Provider
+  const lessonProvider = new LessonWebviewProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      LessonWebviewProvider.viewType,
+      lessonProvider,
+      { webviewOptions: { retainContextWhenHidden: true } }
+    )
+  );
+
   // Register commands
-  registerCommands(context, firebaseService, workspaceManager, courseTreeProvider);
+  registerCommands(context, firebaseService, workspaceManager, courseTreeProvider, lessonProvider);
 
   // Check authentication on startup
   const user = firebaseService.getCurrentUser();
@@ -55,7 +71,8 @@ function registerCommands(
   context: vscode.ExtensionContext,
   firebase: FirebaseService,
   workspace: WorkspaceManager,
-  courseTree: CourseTreeProvider
+  courseTree: CourseTreeProvider,
+  lessonProvider: LessonWebviewProvider
 ) {
   // Authentication commands
   context.subscriptions.push(
@@ -138,6 +155,20 @@ function registerCommands(
       async (courseId: string, topicId: string, lessonId: string) => {
         try {
           await workspace.openLesson(courseId, topicId, lessonId);
+
+          // Fetch lesson content to update the webview
+          const lesson = await firebase.getLesson(lessonId);
+          const sections = await firebase.getSections(lessonId);
+
+          if (lesson) {
+            lessonProvider.updateLessonContent(
+              courseId,
+              topicId,
+              lessonId,
+              lesson.lessonName,
+              sections
+            );
+          }
         } catch (error: any) {
           vscode.window.showErrorMessage(
             `Failed to open lesson: ${error.message}`
