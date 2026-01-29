@@ -1,0 +1,140 @@
+{
+  "name": "cs-learning-platform",
+  "displayName": "CS Learning Platform",
+  "description": "Interactive computer science learning environment with local code execution",
+  "version": "0.1.0",
+  "publisher": "cs-learning-platform",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Education",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:csLearningPlatform.lessonView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "csLearningPlatform.login",
+        "title": "CS Platform: Sign In",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "csLearningPlatform.logout",
+        "title": "CS Platform: Sign Out",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "csLearningPlatform.loginWithGoogle",
+        "title": "CS Platform: Sign In with Google",
+        "icon": "$(account)"
+      },
+      {
+        "command": "csLearningPlatform.openCourse",
+        "title": "CS Platform: Open Course"
+      },
+      {
+        "command": "csLearningPlatform.openLesson",
+        "title": "CS Platform: Open Lesson"
+      },
+      {
+        "command": "csLearningPlatform.submitExercise",
+        "title": "CS Platform: Submit Exercise",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "csLearningPlatform.syncNow",
+        "title": "CS Platform: Sync Now",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "csLearningPlatform.pauseSync",
+        "title": "CS Platform: Pause Sync"
+      },
+      {
+        "command": "csLearningPlatform.resumeSync",
+        "title": "CS Platform: Resume Sync"
+      },
+      {
+        "command": "csLearningPlatform.refreshCourses",
+        "title": "CS Platform: Refresh Courses",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "csLearningPlatform",
+          "title": "CS Learning",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "csLearningPlatform": [
+        {
+          "id": "csLearningPlatform.coursesView",
+          "name": "Courses",
+          "icon": "resources/icon.svg"
+        },
+        {
+          "type": "webview",
+          "id": "csLearningPlatform.lessonView",
+          "name": "Lesson Content"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "csLearningPlatform.refreshCourses",
+          "when": "view == csLearningPlatform.coursesView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CS Learning Platform",
+      "properties": {
+        "csLearningPlatform.workspaceRoot": {
+          "type": "string",
+          "default": "~/cs-platform-workspace",
+          "description": "Root directory for course workspaces"
+        },
+        "csLearningPlatform.autoSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically sync code changes with Firebase"
+        },
+        "csLearningPlatform.syncInterval": {
+          "type": "number",
+          "default": 30,
+          "description": "Sync interval in seconds (minimum: 10)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack --mode development",
+    "watch": "webpack --watch --mode development",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@types/vscode": "^1.85.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "firebase": "^10.7.1",
+    "simple-git": "^3.21.0"
+  }
+}
