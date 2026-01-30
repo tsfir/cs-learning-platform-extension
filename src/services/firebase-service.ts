@@ -96,7 +96,6 @@ export class FirebaseService {
   async signInWithGoogle(): Promise<void> {
     try {
       // Use VS Code's authentication API with our Firebase provider
-      // The auth provider handles the OAuth flow via the web app and validates the token
       const session = await vscode.authentication.getSession(
         'firebase-google',
         ['email', 'profile'],
@@ -104,19 +103,7 @@ export class FirebaseService {
       );
 
       if (session) {
-        // Create a Firebase credential from the token
-        const credential = GoogleAuthProvider.credential(session.accessToken);
-
-        // Sign in to the Firebase SDK with the credential
-        await signInWithCredential(this.auth!, credential);
-
-        // Store the user info from the validated session
-        this.context.globalState.update('userId', session.account.id);
-        this.context.globalState.update('userEmail', session.account.label);
-
-        vscode.window.showInformationMessage(
-          `Successfully signed in with Google as ${session.account.label}!`
-        );
+        await this.signInWithSession(session);
       }
     } catch (error: any) {
       if (error.message === 'User cancelled') {
@@ -128,6 +115,49 @@ export class FirebaseService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Try to restore an existing session silently
+   */
+  async restoreSession(): Promise<boolean> {
+    try {
+      const session = await vscode.authentication.getSession(
+        'firebase-google',
+        ['email', 'profile'],
+        { createIfNone: false }
+      );
+
+      if (session) {
+        console.log('[FirebaseService] Found existing VS Code session. Restoring...');
+        await this.signInWithSession(session);
+        return true;
+      }
+    } catch (error) {
+      console.error('[FirebaseService] Failed to restore session:', error);
+    }
+    return false;
+  }
+
+  private async signInWithSession(session: vscode.AuthenticationSession): Promise<void> {
+    console.log('[FirebaseService] Signing in with credential from session...');
+
+    // Create a Firebase credential from the token
+    const credential = GoogleAuthProvider.credential(session.accessToken);
+
+    // Sign in to the Firebase SDK with the credential
+    const userCredential = await signInWithCredential(this.auth!, credential);
+    const user = userCredential.user;
+
+    console.log('[FirebaseService] Signed in to Firebase SDK as:', user.email, user.uid);
+
+    // Store the ACTUAL Firebase UID
+    this.context.globalState.update('userId', user.uid);
+    this.context.globalState.update('userEmail', user.email);
+
+    vscode.window.showInformationMessage(
+      `Signed in as ${user.email}`
+    );
   }
 
   async signInWithEmailPassword(): Promise<void> {

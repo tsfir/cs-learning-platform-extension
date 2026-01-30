@@ -89,18 +89,27 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   // Check authentication on startup
-  const user = firebaseService.getCurrentUser();
-  if (!user) {
-    vscode.window.showInformationMessage(
-      'CS Learning Platform: Sign in to access your courses',
-      'Sign In'
-    ).then(selection => {
-      if (selection === 'Sign In') {
-        vscode.commands.executeCommand('csLearningPlatform.login');
-      }
-    });
+  // Check authentication on startup
+  // First try to restore existing session silently
+  const restored = await firebaseService.restoreSession();
+
+  if (!restored) {
+    const user = firebaseService.getCurrentUser();
+    if (!user) {
+      vscode.window.showInformationMessage(
+        'CS Learning Platform: Sign in to access your courses',
+        'Sign In'
+      ).then(selection => {
+        if (selection === 'Sign In') {
+          vscode.commands.executeCommand('csLearningPlatform.login');
+        }
+      });
+    } else {
+      // Refresh course tree if user is signed in (SDK persistence worked)
+      courseTreeProvider.refresh();
+    }
   } else {
-    // Refresh course tree if user is signed in
+    // Session restored successfully
     courseTreeProvider.refresh();
   }
 }

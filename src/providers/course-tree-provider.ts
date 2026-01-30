@@ -45,13 +45,17 @@ class LessonTreeItem extends vscode.TreeItem {
     public readonly courseId: string,
     public readonly topicId: string,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState
+    ,
+    public readonly completed: boolean = false
   ) {
     super(lesson.lessonName, collapsibleState);
     this.tooltip = `${lesson.lessonType} lesson`;
-    this.description = lesson.lessonType;
+    this.description = completed ? `${lesson.lessonType} • Completed` : lesson.lessonType;
 
-    // Different icons for different lesson types
-    if (lesson.lessonType === 'exercise') {
+    // Different icons for different lesson types; show completed marker when applicable
+    if (completed) {
+      this.iconPath = new vscode.ThemeIcon('check');
+    } else if (lesson.lessonType === 'exercise') {
       this.iconPath = new vscode.ThemeIcon('debug-alt');
     } else if (lesson.lessonType === 'quiz') {
       this.iconPath = new vscode.ThemeIcon('checklist');
@@ -76,10 +80,12 @@ class ExerciseTreeItem extends vscode.TreeItem {
     public readonly topicId: string,
     public readonly lessonId: string,
     public readonly sectionNumber: number
+    ,
+    public readonly grade?: number
   ) {
     super(`${sectionNumber}. ${section.title || 'Exercise'}`, vscode.TreeItemCollapsibleState.None);
     this.tooltip = section.title || 'Code Exercise';
-    this.description = section.language || 'code';
+    this.description = grade !== undefined ? `Grade: ${grade}` : (section.language || 'code');
     this.iconPath = new vscode.ThemeIcon('code');
     this.contextValue = 'exercise';
 
@@ -176,16 +182,39 @@ export class CourseTreeProvider implements vscode.TreeDataProvider<TreeItem> {
   private async getLessons(topicId: string): Promise<LessonTreeItem[]> {
     try {
       const lessons = await this.firebase.getLessons(topicId);
+      const userId = this.firebase.getUserId();
 
-      return lessons.map(
-        (lesson) =>
+      const items: LessonTreeItem[] = [];
+      for (const lesson of lessons) {
+        // Determine completion: all code sections must have a non-zero grade
+        let completed = false;
+        const sections = await this.firebase.getSections(lesson.id);
+        const codeSections = sections.filter((s) => s.type === 'code');
+
+        if (codeSections.length > 0 && userId) {
+          let allDone = true;
+          for (const s of codeSections) {
+            const ans = await this.firebase.getStudentAnswer(s.id, userId);
+            if (!ans || !ans.grade || ans.grade === 0) {
+              allDone = false;
+              break;
+            }
+          }
+          completed = allDone;
+        }
+
+        items.push(
           new LessonTreeItem(
             lesson,
             lesson.courseId,
             topicId,
-            vscode.TreeItemCollapsibleState.Collapsed
+            vscode.TreeItemCollapsibleState.Collapsed,
+            completed
           )
-      );
+        );
+      }
+
+      return items;
     } catch (error) {
       console.error('Error loading lessons:', error);
       vscode.window.showErrorMessage('Failed to load lessons');
@@ -198,17 +227,32 @@ export class CourseTreeProvider implements vscode.TreeDataProvider<TreeItem> {
       const sections = await this.firebase.getSections(lessonId);
       // Filter for code sections only
       const codeSections = sections.filter((s) => s.type === 'code');
+      const userId = this.firebase.getUserId();
+      const items: ExerciseTreeItem[] = [];
 
-      return codeSections.map(
-        (section, index) =>
+      for (let index = 0; index < codeSections.length; index++) {
+        const section = codeSections[index];
+        let grade: number | undefined = undefined;
+        if (userId) {
+          const ans = await this.firebase.getStudentAnswer(section.id, userId);
+          if (ans && typeof (ans as any).grade === 'number') {
+            grade = (ans as any).grade;
+          }
+        }
+
+        items.push(
           new ExerciseTreeItem(
             section,
             courseId,
             topicId,
             lessonId,
-            index + 1
+            index + 1,
+            grade
           )
-      );
+        );
+      }
+
+      return items;
     } catch (error) {
       console.error('Error loading exercises:', error);
       vscode.window.showErrorMessage('Failed to load exercises');

@@ -5,6 +5,25 @@ const SESSIONS_SECRET_KEY = 'cs-learning-platform.sessions';
 const AUTH_TYPE = 'firebase-google';
 const AUTH_NAME = 'CS Learning Platform';
 
+/**
+ * Authentication Flow Explanation:
+ * 
+ * 1. User clicks "Sign in" in VS Code.
+ * 2. Extension opens the Web App URL (VSCodeAuth.tsx) in default browser.
+ * 3. User signs in with Google on the Web App (client-side).
+ * 4. Web App gets the Google ID Token (IdP token) from credentailFromResult.
+ * 5. Web App redirects back to vscode:// schemas with the token.
+ * 6. Extension (UriHandler) receives the token.
+ * 7. Extension (FirebaseAuthenticationProvider) validates the Google ID Token via Google API.
+ * 8. Extension creates a VS Code Session.
+ * 9. FirebaseService uses this Google ID Token to `signInWithCredential` in the internal Firebase SDK.
+ * 
+ * Mismatch Note: 
+ * - The session stores the Google Subject ID (sub) as the account ID.
+ * - However, FirebaseService will generate/retrieve a DIFFERENT Firebase UID after sign in.
+ * - We must use the Firebase UID for all database operations, NOT the session ID.
+ */
+
 interface FirebaseSession {
   id: string;
   accessToken: string;
@@ -207,38 +226,44 @@ export class FirebaseAuthenticationProvider implements vscode.AuthenticationProv
   }
 
   /**
-   * Get user info from Firebase token
+   * Get user info from Google ID Token
+   * 
+   * We verify the token against Google's OAuth2 API because we are receiving
+   * a Google ID Token (from the web app), not a Firebase ID Token.
+   * 
+   * This token is then used by FirebaseService to sign in via signInWithCredential.
    */
   private async getUserInfo(token: string): Promise<{ uid: string; email?: string; displayName?: string }> {
     try {
-      // Call Firebase Auth REST API to verify token and get user info
+      console.log('[FirebaseAuth] Verifying Google ID Token...');
+
+      // Verify Google ID Token
       const response = await fetch(
-        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=AIzaSyAj5aDlKy8bX4AaYzqYRzlWr2odIoedstg`,
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${token}`,
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            idToken: token,
-          }),
+          method: 'GET',
         }
       );
 
-      const data: any = await response.json();
-
-      if (data.users && data.users.length > 0) {
-        const user = data.users[0];
-        return {
-          uid: user.localId,
-          email: user.email,
-          displayName: user.displayName,
-        };
-      } else {
-        throw new Error('Invalid token');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[FirebaseAuth] Token verification failed:', errorText);
+        throw new Error(`Token verification failed: ${response.statusText}`);
       }
+
+      const data: any = await response.json();
+      console.log('[FirebaseAuth] Token verified for:', data.email);
+
+      // Map Google profile to session account
+      // Note: data.sub is the Google UID, not Firebase UID.
+      // The actual Firebase sign-in happens in FirebaseService.
+      return {
+        uid: data.sub,
+        email: data.email,
+        displayName: data.name,
+      };
     } catch (error) {
-      console.error('Failed to get user info:', error);
+      console.error('[FirebaseAuth] Failed to get user info:', error);
       throw error;
     }
   }

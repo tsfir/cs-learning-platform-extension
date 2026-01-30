@@ -38,7 +38,7 @@ export class OakleyChatParticipant {
             }
         );
 
-        participant.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'oakley.svg');
+        participant.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'logo.svg');
         this.context.subscriptions.push(participant);
     }
 

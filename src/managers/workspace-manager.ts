@@ -392,9 +392,9 @@ obj/
       await this.createExerciseFile(section, exercisesPath, userId);
     }
 
-    vscode.window.showInformationMessage(
-      `Created ${codeSections.length} exercise file(s)`
-    );
+    //vscode.window.showInformationMessage(
+    //  `Created ${codeSections.length} exercise file(s)`
+    //);
   }
 
   private async createLessonReadme(
