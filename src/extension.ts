@@ -7,6 +7,7 @@ import { LessonWebviewProvider } from './providers/lesson-webview-provider';
 import { OakleyChatParticipant } from './chat/oakley-participant';
 import { GeminiService } from './services/gemini-service';
 import { FileSyncManager } from './sync/file-sync-manager';
+import * as path from 'path';
 import * as fs from 'fs/promises'; // for reading exercise file
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -39,6 +40,9 @@ export async function activate(context: vscode.ExtensionContext) {
   const chatParticipant = new OakleyChatParticipant(context, geminiService, firebaseService);
   chatParticipant.register();
 
+  // Initialize sync manager (persistent)
+  const fileSyncManager = new FileSyncManager(firebaseService, workspaceManager);
+
   // Initialize course tree provider
   const courseTreeProvider = new CourseTreeProvider(firebaseService, workspaceManager);
 
@@ -59,36 +63,29 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Register commands
-  const state: { fileSyncManager: FileSyncManager | null } = { fileSyncManager: null };
-  registerCommands(context, firebaseService, workspaceManager, courseTreeProvider, lessonProvider, chatParticipant, state);
+  registerCommands(context, firebaseService, workspaceManager, courseTreeProvider, lessonProvider, chatParticipant, fileSyncManager);
 
   // Hook into document save events to trigger manual syncs (more reliable than file watcher)
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(async (document) => {
-      if (state.fileSyncManager && document.fileName.includes('exercise_')) {
+      if (document.fileName.includes('exercise_')) {
         console.log(`[Extension] Document saved: ${document.fileName}`);
-        await state.fileSyncManager.syncCurrentFile(document.fileName);
+        await fileSyncManager.syncCurrentFile(document.fileName);
       }
     })
   );
 
   // Handle workspace changes to stop syncing when switching workspaces
   vscode.workspace.onDidChangeWorkspaceFolders(() => {
-    if (state.fileSyncManager) {
-      state.fileSyncManager.stopWatching();
-    }
+    fileSyncManager.stopWatching();
   });
 
-  // Create a global subscription for cleanup
   context.subscriptions.push({
     dispose: () => {
-      if (state.fileSyncManager) {
-        state.fileSyncManager.dispose();
-      }
+      fileSyncManager.dispose();
     }
   });
 
-  // Check authentication on startup
   // Check authentication on startup
   // First try to restore existing session silently
   const restored = await firebaseService.restoreSession();
@@ -121,7 +118,7 @@ function registerCommands(
   courseTree: CourseTreeProvider,
   lessonProvider: LessonWebviewProvider,
   chatParticipant: OakleyChatParticipant,
-  state: { fileSyncManager: FileSyncManager | null }
+  fileSyncManager: FileSyncManager
 ) {
   // Authentication commands
   context.subscriptions.push(
@@ -209,6 +206,7 @@ function registerCommands(
           console.log(`Extension: fetching data for lesson ${lessonId}`);
           const lesson = await firebase.getLesson(lessonId);
           const sections = await firebase.getSections(lessonId);
+          const topic = await firebase.getTopic(topicId);
           console.log(`Extension: fetched lesson: ${!!lesson}, sections: ${sections?.length}`);
 
           if (lesson) {
@@ -221,14 +219,28 @@ function registerCommands(
             );
 
             // Start file sync for this lesson
-            const currentWorkspace = workspace.getCurrentWorkspace();
-            if (currentWorkspace && sections) {
-              if (state.fileSyncManager) {
-                state.fileSyncManager.stopWatching();
-              }
-              state.fileSyncManager = new FileSyncManager(firebase, workspace);
-              state.fileSyncManager.startWatchingWithState(
-                currentWorkspace.exercisesPath,
+            if (sections) {
+              const lessonFolderName = lesson.lessonSlug || lessonId;
+              const topicFolderName = topic?.topicSlug || topicId;
+
+              const userId = firebase.getUserId();
+              const course = await firebase.getCourse(courseId);
+              const courseFolderName = course?.courseSlug || courseId;
+
+              // We need the full path to the exercises folder for the sync manager
+              const workspaceRoot = workspace.getWorkspaceRoot();
+              const exercisesPath = path.join(
+                workspaceRoot,
+                userId!,
+                courseFolderName,
+                'topics',
+                topicFolderName,
+                lessonFolderName,
+                'exercises'
+              );
+
+              fileSyncManager.trackLesson(
+                exercisesPath,
                 lessonId,
                 sections,
                 courseId
@@ -270,15 +282,7 @@ function registerCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'csLearningPlatform.checkAnswer',
-      async (item: any) => { // Receives the TreeItem argument
-
-        // The argument 'item' corresponds to what ExerciseTreeItem passes or the item itself.
-        // In getExercises, we passed arguments: [courseId, topicId, lessonId, section].
-        // However, triggered from context menu, the first arg is the tree item itself usually.
-        // But wait, the context menu command 'arguments' is NOT automatically passed if standard selection is used?
-        // Actually, for a tree view item context menu, the item itself is passed.
-        // Let's assume 'item' is the ExerciseTreeItem which has public properties: section, courseId, etc.
-
+      async (item: any) => {
         // If the item has the properties we need (we made them public in CourseTreeProvider)
         if (!item || !item.section) {
           vscode.window.showErrorMessage("Could not identify exercise context.");
@@ -290,7 +294,7 @@ function registerCommands(
         const lessonId = item.lessonId;
 
         // Get the file path
-        const filePath = workspace.getExerciseFilePath(section);
+        const filePath = await workspace.getExerciseFilePath(section);
         if (!filePath) {
           vscode.window.showErrorMessage("Exercise file path not found. Please open the lesson first.");
           return;
@@ -320,11 +324,52 @@ function registerCommands(
       }
     )
   );
+
   context.subscriptions.push(
     vscode.commands.registerCommand('csLearningPlatform.refreshCourses', () => {
       courseTree.refresh();
       vscode.window.showInformationMessage('Courses refreshed');
     })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'csLearningPlatform.getHint',
+      async (item: any) => {
+        // If the item has the properties we need
+        if (!item || !item.section) {
+          vscode.window.showErrorMessage("Could not identify exercise context.");
+          return;
+        }
+
+        const section = item.section;
+
+        // Get the file path
+        const filePath = await workspace.getExerciseFilePath(section);
+        if (!filePath) {
+          vscode.window.showErrorMessage("Exercise file path not found. Please open the lesson first.");
+          return;
+        }
+
+        try {
+          // Read student code
+          const studentCode = await fs.readFile(filePath, 'utf-8');
+
+          // Set context for chat
+          chatParticipant.setHintContext({
+            question: section.content || section.title,
+            studentAnswer: studentCode,
+            language: section.language || 'text'
+          });
+
+          // Open Chat with hint command
+          await vscode.commands.executeCommand('workbench.action.chat.open', '@oakley hint');
+
+        } catch (error: any) {
+          vscode.window.showErrorMessage(`Failed to get hint: ${error.message}`);
+        }
+      }
+    )
   );
 
   context.subscriptions.push(

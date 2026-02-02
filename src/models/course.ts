@@ -35,6 +35,7 @@ export interface Lesson {
   lessonName: string;
   lessonType: 'content' | 'exercise' | 'quiz';
   orderIndex: number;
+  isPublished?: boolean;
 }
 
 export interface Section {

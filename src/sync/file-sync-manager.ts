@@ -9,6 +9,9 @@ export class FileSyncManager {
   private fileWatcher: vscode.FileSystemWatcher | null = null;
   private pendingSaves = new Map<string, NodeJS.Timeout>();
   private syncInProgress = new Set<string>();
+  private fileToSectionMap = new Map<string, Section>();
+  private trackedLessons = new Set<string>();
+  private currentCourseId: string | null = null;
 
   constructor(
     private firebase: FirebaseService,
@@ -16,41 +19,50 @@ export class FileSyncManager {
   ) { }
 
   /**
-   * Start monitoring exercise files for changes
+   * Add a lesson to the watcher and start tracking its files
    */
-  startWatching(exercisesPath: string, lessonId: string, sections: Section[], courseId: string): void {
-    // Create a map of file paths to section IDs for quick lookup
-    const fileToSectionMap = new Map<string, Section>();
+  trackLesson(exercisesPath: string, lessonId: string, sections: Section[], courseId: string): void {
+    if (this.currentCourseId && this.currentCourseId !== courseId) {
+      console.log(`[FileSyncManager] Course changed, stopping current activity`);
+      this.stopWatching();
+    }
 
+    this.currentCourseId = courseId;
+    this.trackedLessons.add(lessonId);
+
+    // Append sections to the global map
     for (const section of sections) {
       if (section.type === 'code') {
         const language = section.language || 'python';
         const ext = this.getFileExtension(language);
         const fileName = `exercise_${section.orderIndex}_${this.sanitizeFileName(section.title)}.${ext}`;
         const filePath = path.join(exercisesPath, fileName);
-        fileToSectionMap.set(filePath.toLowerCase(), section);
-        console.log(`[FileSyncManager] Tracking file: ${filePath}`);
+        this.fileToSectionMap.set(filePath.toLowerCase(), section);
+        console.log(`[FileSyncManager] Now tracking: ${fileName} (Lesson: ${lessonId})`);
       }
     }
 
-    // Stop previous watcher if exists
-    if (this.fileWatcher) {
-      this.fileWatcher.dispose();
+    // Ensure watcher is active for the course root
+    if (!this.fileWatcher) {
+      this.startCourseWatcher(courseId);
     }
+  }
 
-    console.log(`[FileSyncManager] Starting watcher for: ${exercisesPath}`);
+  private startCourseWatcher(courseId: string): void {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) return;
 
-    // Watch the exercises directory with glob pattern for code files
-    const pattern = path.join(exercisesPath, '**', '*.{py,java,cs,ts,js}');
+    console.log(`[FileSyncManager] Starting course-level watcher for: ${workspaceRoot}`);
+
+    // Watch all code files in the workspace
+    const pattern = new vscode.RelativePattern(workspaceRoot, 'topics/**/*.{py,java,cs,ts,js}');
     this.fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-    // On file change, queue a sync
     this.fileWatcher.onDidChange((uri) => {
-      console.log(`[FileSyncManager] File changed: ${uri.fsPath}`);
-      this.queueSync(uri.fsPath, fileToSectionMap, lessonId, courseId);
+      this.queueSync(uri.fsPath, '', courseId);
     });
 
-    vscode.window.showInformationMessage('File sync enabled for this lesson');
+    vscode.window.showInformationMessage(`Continuous syncing enabled for ${this.trackedLessons.size} lesson(s)`);
   }
 
   /**
@@ -62,6 +74,9 @@ export class FileSyncManager {
       this.fileWatcher = null;
     }
     this.pendingSaves.clear();
+    this.fileToSectionMap.clear();
+    this.trackedLessons.clear();
+    this.currentCourseId = null;
   }
 
   /**
@@ -69,12 +84,10 @@ export class FileSyncManager {
    */
   private queueSync(
     filePath: string,
-    fileToSectionMap: Map<string, Section>,
-    lessonId: string,
+    unused_lessonId: string,
     courseId: string,
     delayMs: number = 2000
   ): void {
-    // Cancel previous timeout for this file
     const existingTimeout = this.pendingSaves.get(filePath);
     if (existingTimeout) {
       clearTimeout(existingTimeout);
@@ -84,7 +97,7 @@ export class FileSyncManager {
     // Set new timeout
     const timeout = setTimeout(async () => {
       console.log(`[FileSyncManager] Executing sync for: ${path.basename(filePath)}`);
-      await this.syncFile(filePath, fileToSectionMap, lessonId, courseId);
+      await this.syncFile(filePath, courseId);
       this.pendingSaves.delete(filePath);
     }, delayMs);
 
@@ -97,12 +110,10 @@ export class FileSyncManager {
    */
   private async syncFile(
     filePath: string,
-    fileToSectionMap: Map<string, Section>,
-    lessonId: string,
     courseId: string
   ): Promise<void> {
     const filePathLower = filePath.toLowerCase();
-    const section = fileToSectionMap.get(filePathLower);
+    const section = this.fileToSectionMap.get(filePathLower);
 
     if (!section) {
       console.log(`[FileSyncManager] File not tracked in section map: ${filePath}`);
@@ -134,7 +145,7 @@ export class FileSyncManager {
       await this.firebase.saveStudentAnswer(
         section.id,
         userId,
-        lessonId,
+        section.lessonId,
         content,
         'code',
         courseId
@@ -151,48 +162,14 @@ export class FileSyncManager {
   }
 
   /**
-   * Store the fileToSectionMap for manual sync operations
-   */
-  private fileToSectionMap: Map<string, Section> | null = null;
-  private currentLessonId: string | null = null;
-  private currentCourseId: string | null = null;
-
-  /**
-   * Enhanced startWatching that stores necessary state for manual syncs
-   */
-  startWatchingWithState(
-    exercisesPath: string,
-    lessonId: string,
-    sections: Section[],
-    courseId: string
-  ): void {
-    // Store state for manual sync
-    this.currentLessonId = lessonId;
-    this.currentCourseId = courseId;
-    this.fileToSectionMap = new Map();
-
-    for (const section of sections) {
-      if (section.type === 'code') {
-        const language = section.language || 'python';
-        const ext = this.getFileExtension(language);
-        const fileName = `exercise_${section.orderIndex}_${this.sanitizeFileName(section.title)}.${ext}`;
-        const filePath = path.join(exercisesPath, fileName);
-        this.fileToSectionMap!.set(filePath.toLowerCase(), section);
-      }
-    }
-
-    this.startWatching(exercisesPath, lessonId, sections, courseId);
-  }
-
-  /**
    * Manual sync - for testing or triggering sync from UI
    */
   async syncCurrentFile(filePath: string): Promise<void> {
-    if (!this.fileToSectionMap || !this.currentLessonId || !this.currentCourseId) {
+    if (this.fileToSectionMap.size === 0 || !this.currentCourseId) {
       console.warn('[FileSyncManager] No active watcher state');
       return;
     }
-    await this.syncFile(filePath, this.fileToSectionMap, this.currentLessonId, this.currentCourseId);
+    await this.syncFile(filePath, this.currentCourseId);
   }
 
   private sanitizeFileName(name: string): string {

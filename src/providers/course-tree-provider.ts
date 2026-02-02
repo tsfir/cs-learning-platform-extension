@@ -184,8 +184,20 @@ export class CourseTreeProvider implements vscode.TreeDataProvider<TreeItem> {
       const lessons = await this.firebase.getLessons(topicId);
       const userId = this.firebase.getUserId();
 
+      // Check if user is the course owner (for filtering unpublished lessons)
+      let isCourseOwner = false;
+      if (lessons.length > 0 && userId) {
+        const course = await this.firebase.getCourse(lessons[0].courseId);
+        isCourseOwner = course?.createdBy === userId;
+      }
+
       const items: LessonTreeItem[] = [];
       for (const lesson of lessons) {
+        // Filter out unpublished lessons for non-owners
+        if (lesson.isPublished === false && !isCourseOwner) {
+          continue;
+        }
+
         // Determine completion: all code sections must have a non-zero grade
         let completed = false;
         const sections = await this.firebase.getSections(lesson.id);

@@ -12,9 +12,16 @@ interface GradingRequest {
     language: string;
 }
 
+interface HintRequest {
+    question: string;
+    studentAnswer: string;
+    language: string;
+}
+
 export class OakleyChatParticipant {
     public static readonly PARTICIPANT_ID = 'cs-learning-platform.oakley';
     private gradingContext: GradingRequest | undefined;
+    private hintContext: HintRequest | undefined;
 
     constructor(
         private context: vscode.ExtensionContext,
@@ -26,6 +33,12 @@ export class OakleyChatParticipant {
         const participant = vscode.chat.createChatParticipant(
             OakleyChatParticipant.PARTICIPANT_ID,
             async (request, context, stream, token) => {
+
+                // Check if this is a hint request
+                if (request.command === 'hint' || this.hintContext) {
+                    await this.handleHint(request, stream);
+                    return;
+                }
 
                 // Check if this is a grading request
                 if (request.command === 'grade' || this.gradingContext) {
@@ -44,6 +57,10 @@ export class OakleyChatParticipant {
 
     setGradingContext(context: GradingRequest) {
         this.gradingContext = context;
+    }
+
+    setHintContext(context: HintRequest) {
+        this.hintContext = context;
     }
 
     private async handleTutoring(
@@ -69,6 +86,36 @@ Explain concepts in a beginner-friendly way. Do not give direct answers assignme
             stream.markdown(response);
         } catch (error: any) {
             stream.markdown(`I'm sorry, I encountered an error: ${error.message}`);
+        }
+    }
+
+    private async handleHint(
+        request: vscode.ChatRequest,
+        stream: vscode.ChatResponseStream
+    ) {
+        if (!this.hintContext) {
+            stream.markdown("I don't see an exercise to provide a hint for right now. Please right-click an exercise in the Course tree and select 'Get Hint'.");
+            return;
+        }
+
+        try {
+            stream.progress('Thinking of a helpful hint...');
+            const ctx = this.hintContext;
+
+            // Call hint API
+            const hint = await this.gemini.getHint(
+                ctx.question,
+                ctx.studentAnswer,
+                ctx.language
+            );
+
+            stream.markdown(`## 💡 Hint\n\n${hint}`);
+
+            // Clear context after providing hint
+            this.hintContext = undefined;
+
+        } catch (error: any) {
+            stream.markdown(`Failed to get hint: ${error.message}`);
         }
     }
 

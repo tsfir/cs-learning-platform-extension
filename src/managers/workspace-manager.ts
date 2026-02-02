@@ -8,16 +8,9 @@ import type { Course, Topic, Lesson, Section } from '../models';
 interface WorkspaceStructure {
   userId: string;
   courseId: string;
-  topicId: string;
-  lessonId: string;
   courseSlug?: string;
-  topicSlug?: string;
-  lessonSlug?: string;
   basePath: string;
   coursePath: string;
-  topicPath: string;
-  lessonPath: string;
-  exercisesPath: string;
 }
 
 export class WorkspaceManager {
@@ -94,31 +87,20 @@ export class WorkspaceManager {
       return;
     }
 
-    // If we've already set up this lesson workspace, no need to re-run setup or show notifications.
-    if (
-      this.currentWorkspace &&
-      this.currentWorkspace.courseId === courseId &&
-      this.currentWorkspace.topicId === topicId &&
-      this.currentWorkspace.lessonId === lessonId
-    ) {
-      // Already prepared for this lesson; silently return so actions like opening different
-      // exercises in the same lesson don't trigger workspace change notifications.
-      return;
-    }
-
-    vscode.window.showInformationMessage('Opening lesson workspace...');
+    // If we're already in this course workspace, we don't need to reopen it.
+    // We just need to ensure the lesson files are set up.
+    const isCourseAlreadyOpen = this.currentWorkspace && this.currentWorkspace.courseId === courseId;
 
     // Fetch course, topic, and lesson to get slugs
     const course = await this.firebase.getCourse(courseId);
     const topic = await this.firebase.getTopic(topicId);
     const lesson = await this.firebase.getLesson(lessonId);
 
-    // Use slugs for folder names, fallback to IDs
+    const workspaceRoot = this.getWorkspaceRoot();
     const courseFolderName = course?.courseSlug || courseId;
     const topicFolderName = topic?.topicSlug || topicId;
     const lessonFolderName = lesson?.lessonSlug || lessonId;
 
-    const workspaceRoot = this.getWorkspaceRoot();
     const coursePath = path.join(workspaceRoot, userId, courseFolderName);
     const topicPath = path.join(coursePath, 'topics', topicFolderName);
     const lessonPath = path.join(topicPath, lessonFolderName);
@@ -143,16 +125,9 @@ export class WorkspaceManager {
     this.currentWorkspace = {
       userId,
       courseId,
-      topicId,
-      lessonId,
       courseSlug: course?.courseSlug,
-      topicSlug: topic?.topicSlug,
-      lessonSlug: lesson?.lessonSlug,
       basePath: workspaceRoot,
       coursePath,
-      topicPath,
-      lessonPath,
-      exercisesPath,
     };
 
     // Load lesson content and create exercise files
@@ -160,55 +135,40 @@ export class WorkspaceManager {
 
     // Open course folder in VS Code if not already open
     const uri = vscode.Uri.file(coursePath);
-    const currentWorkspace = vscode.workspace.workspaceFolders?.[0];
+    const currentVSCodeWorkspace = vscode.workspace.workspaceFolders?.[0];
 
-    if (!currentWorkspace) {
-      // No workspace open, open the course folder
-      await vscode.commands.executeCommand('vscode.openFolder', uri, {
-        forceNewWindow: false,
-      });
+    // Normalize paths for comparison (especially important on Windows for drive letter casing)
+    const normalizedTarget = uri.fsPath.toLowerCase();
+    const normalizedCurrent = currentVSCodeWorkspace?.uri.fsPath.toLowerCase();
 
-      // Open first exercise file after workspace loads
-      setTimeout(async () => {
-        await this.openFirstExercise(exercisesPath);
-      }, 1000);
-    } else if (currentWorkspace.uri.fsPath !== coursePath) {
-      // Different workspace open, ask user what to do
+    if (!currentVSCodeWorkspace) {
+      // No workspace open
+      await vscode.commands.executeCommand('vscode.openFolder', uri, { forceNewWindow: false });
+    } else if (normalizedCurrent !== normalizedTarget) {
+      // Different course workspace open
       const choice = await vscode.window.showWarningMessage(
-        `This lesson is in a different course. Would you like to switch to that course folder?`,
-        'Switch Workspace',
-        'Stay Here'
+        `This lesson is in a different course. Switch to ${course?.courseName}?`,
+        'Switch',
+        'Cancel'
       );
-
-      if (choice === 'Switch Workspace') {
-        await vscode.commands.executeCommand('vscode.openFolder', uri, {
-          forceNewWindow: false,
-        });
-
-        // Open first exercise file after workspace loads
-        setTimeout(async () => {
-          await this.openFirstExercise(exercisesPath);
-        }, 1000);
+      if (choice === 'Switch') {
+        await vscode.commands.executeCommand('vscode.openFolder', uri, { forceNewWindow: false });
       } else {
-        // Stay in current workspace but still open the exercise file
-        await this.openFirstExercise(exercisesPath);
+        return; // User cancelled switching
       }
-    } else {
-      // Already in correct workspace, just open the exercise
-      await this.openFirstExercise(exercisesPath);
     }
 
-    // Update workspace state
-    this.context.workspaceState.update('currentLesson', {
-      courseId,
-      topicId,
-      lessonId,
-    });
+    // Always open the first exercise when starting a lesson
+    await this.openFirstExercise(exercisesPath);
+
+    // Update session state
+    this.context.workspaceState.update('currentLesson', { courseId, topicId, lessonId });
+    vscode.window.showInformationMessage(`Lesson "${lesson?.lessonName}" added to workspace.`);
 
     vscode.window.showInformationMessage('Lesson workspace ready!');
   }
 
-  private getWorkspaceRoot(): string {
+  public getWorkspaceRoot(): string {
     const config = vscode.workspace.getConfiguration('csLearningPlatform');
     const configuredRoot = config.get<string>('workspaceRoot');
 
@@ -541,14 +501,30 @@ obj/
   /**
    * Get exercise file path by section
    */
-  getExerciseFilePath(section: Section): string | null {
+  async getExerciseFilePath(section: Section): Promise<string | null> {
     if (!this.currentWorkspace) {
       return null;
     }
 
+    // Since we are now course-centric, we need the lesson/topic context to find the file
+    const lesson = await this.firebase.getLesson(section.lessonId);
+    if (!lesson) return null;
+    const topic = await this.firebase.getTopic(lesson.topicId);
+    if (!topic) return null;
+
+    const topicFolderName = topic.topicSlug || topic.id;
+    const lessonFolderName = lesson.lessonSlug || lesson.id;
+
     const extension = this.getFileExtension(section.language || 'python');
     const fileName = `exercise_${section.orderIndex}_${this.sanitizeFileName(section.title)}.${extension}`;
-    return path.join(this.currentWorkspace.exercisesPath, fileName);
+    return path.join(
+      this.currentWorkspace.coursePath,
+      'topics',
+      topicFolderName,
+      lessonFolderName,
+      'exercises',
+      fileName
+    );
   }
 
   /**
@@ -560,8 +536,14 @@ obj/
     }
 
     const userId = this.firebase.getUserId();
-    await this.createExerciseFile(section, this.currentWorkspace.exercisesPath, userId);
-    return this.getExerciseFilePath(section);
+    const filePath = await this.getExerciseFilePath(section);
+    if (!filePath) return null;
+
+    const exercisesPath = path.dirname(filePath);
+    await this.ensureDirectory(exercisesPath);
+
+    await this.createExerciseFile(section, exercisesPath, userId);
+    return filePath;
   }
 
   /**

@@ -128,6 +128,53 @@ Remember to be encouraging and helpful.`;
         return { grade, feedback };
     }
 
+    /**
+     * Get a hint for a coding exercise without revealing the answer
+     */
+    async getHint(
+        question: string,
+        studentAnswer: string,
+        language?: string
+    ): Promise<string> {
+        const apiKey = this.getApiKey();
+        if (!apiKey) {
+            throw new Error('Gemini API Key is not configured. Please check your settings.');
+        }
+
+        const hintPrompt = `You are Oakley AI, a friendly and encouraging computer science tutor helping a student who is stuck on a coding exercise.
+
+**Exercise/Question:**
+${question}
+
+**Student's Current Code:**
+${studentAnswer}
+
+${language ? `**Programming Language:** ${language}` : ''}
+
+**Your Task:**
+Provide a helpful hint that will guide the student toward the solution WITHOUT giving away the answer directly.
+
+**Guidelines for your hint:**
+1. Identify what the student might be missing or doing incorrectly
+2. Point them in the right direction with a conceptual hint
+3. You may suggest what to think about or what concept to review
+4. Do NOT provide the actual code solution
+5. Keep it encouraging and supportive
+6. Be concise (2-4 sentences max)
+
+**Response:**
+Provide only the hint, nothing else.`;
+
+        const requestBody: GeminiRequest = {
+            contents: [{
+                role: 'user',
+                parts: [{ text: hintPrompt }]
+            }]
+        };
+
+        return this.makeRequest(apiKey, requestBody);
+    }
+
     private async makeRequest(apiKey: string, body: GeminiRequest): Promise<string> {
         try {
             const endpoint = `${GEMINI_API_BASE}?key=${apiKey}`;
