@@ -1,9 +1,30 @@
 {
-  "name": "cs-learning-platform",
-  "displayName": "CS Learning Platform",
+  "name": "easy-cs-learning-platform",
+  "displayName": "Easy CS Learning Platform",
   "description": "Interactive computer science learning environment with local code execution",
-  "version": "0.1.0",
-  "publisher": "cs-learning-platform",
+  "version": "2.0.0",
+  "publisher": "RonTopol",
+  "icon": "icon.png",
+  "bugs": {
+    "url": "https://github.com/tsfir/EasyLearningVCS/issues"
+  },
+  "homepage": "http://easycslearning.com/",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tsfir/cs-learning-platform-extension"
+  },
+  "keywords": [
+    "education",
+    "learning",
+    "google classroom",
+    "ai assistant",
+    "computer science",
+    "programming",
+    "student",
+    "teacher",
+    "assignment tracking"
+  ],
   "engines": {
     "vscode": "^1.90.0"
   },

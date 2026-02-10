@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { FirebaseService } from '../services/firebase-service';
 import { WorkspaceManager } from '../managers/workspace-manager';
+import { InputMetricsTracker } from './input-metrics-tracker';
 import type { Section } from '../models';
 
 export class FileSyncManager {
@@ -12,11 +13,14 @@ export class FileSyncManager {
   private fileToSectionMap = new Map<string, Section>();
   private trackedLessons = new Set<string>();
   private currentCourseId: string | null = null;
+  private metricsTracker: InputMetricsTracker;
 
   constructor(
     private firebase: FirebaseService,
     private workspaceManager: WorkspaceManager
-  ) { }
+  ) {
+    this.metricsTracker = new InputMetricsTracker();
+  }
 
   /**
    * Add a lesson to the watcher and start tracking its files
@@ -141,14 +145,19 @@ export class FileSyncManager {
       const content = await fs.readFile(filePath, 'utf-8');
       console.log(`[FileSyncManager] File read, ${content.length} bytes. Saving to Firebase...`);
 
-      // Save to Firebase
+      // Collect input metrics and reset for next cycle
+      const inputMetrics = this.metricsTracker.getAndReset(filePath, content.length);
+      console.log(`[FileSyncManager] Metrics: ${inputMetrics.keystrokeCount} keystrokes, ${inputMetrics.pasteCount} pastes, ${inputMetrics.editDurationMs}ms`);
+
+      // Save to Firebase with metrics
       await this.firebase.saveStudentAnswer(
         section.id,
         userId,
         section.lessonId,
         content,
         'code',
-        courseId
+        courseId,
+        inputMetrics
       );
 
       console.log(`[FileSyncManager] Successfully synced: ${filePath}`);
@@ -192,5 +201,6 @@ export class FileSyncManager {
 
   dispose(): void {
     this.stopWatching();
+    this.metricsTracker.dispose();
   }
 }

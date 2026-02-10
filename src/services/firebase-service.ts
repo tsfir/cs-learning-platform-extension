@@ -36,7 +36,7 @@ import {
   getDownloadURL,
   type FirebaseStorage,
 } from 'firebase/storage';
-import type { Course, Topic, Lesson, Section, UserProgress, StudentAnswer } from '../models';
+import type { Course, Topic, Lesson, Section, UserProgress, StudentAnswer, InputMetrics } from '../models';
 
 export class FirebaseService {
   private app: FirebaseApp | null = null;
@@ -304,7 +304,8 @@ export class FirebaseService {
     lessonId: string,
     content: string,
     type: 'code' | 'interactive' = 'code',
-    courseId?: string
+    courseId?: string,
+    inputMetrics?: InputMetrics
   ): Promise<void> {
     const q = query(
       collection(this.db!, 'studentAnswers'),
@@ -316,13 +317,17 @@ export class FirebaseService {
     if (!snapshot.empty) {
       // Update existing answer
       const docRef = snapshot.docs[0].ref;
-      await updateDoc(docRef, {
+      const updateData: Record<string, unknown> = {
         answer: content,
         updatedAt: serverTimestamp()
-      });
+      };
+      if (inputMetrics) {
+        updateData.inputMetrics = inputMetrics;
+      }
+      await updateDoc(docRef, updateData);
     } else {
       // Create new answer
-      const data: any = {
+      const data: Record<string, unknown> = {
         sectionId,
         userId,
         lessonId,
@@ -334,6 +339,9 @@ export class FirebaseService {
 
       if (courseId) {
         data.courseId = courseId;
+      }
+      if (inputMetrics) {
+        data.inputMetrics = inputMetrics;
       }
 
       await addDoc(collection(this.db!, 'studentAnswers'), data);

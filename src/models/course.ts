@@ -70,6 +70,16 @@ export interface UserProgress {
   lastActivity: string;
 }
 
+export interface InputMetrics {
+  keystrokeCount: number;
+  pasteCount: number;
+  pasteCharCount: number;
+  editDurationMs: number;
+  charCount: number;
+  firstInputAt: string;
+  lastInputAt: string;
+}
+
 export interface CodeSubmission {
   userId: string;
   lessonId: string;
