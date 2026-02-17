@@ -2,7 +2,7 @@
   "name": "easy-cs-learning-platform",
   "displayName": "Easy CS Learning Platform",
   "description": "Interactive computer science learning environment with local code execution",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "publisher": "RonTopol",
   "icon": "icon.png",
   "bugs": {
@@ -120,7 +120,7 @@
     },
     "chatParticipants": [
       {
-        "id": "cs-learning-platform.oakley",
+        "id": "easy-cs-learning-platform.oakley",
         "name": "oakley",
         "description": "Oakley AI Tutor",
         "isSticky": true,

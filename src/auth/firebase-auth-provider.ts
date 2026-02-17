@@ -155,7 +155,7 @@ export class FirebaseAuthenticationProvider implements vscode.AuthenticationProv
 
         // Get redirect URI from VS Code
         const redirectUri = await vscode.env.asExternalUri(
-          vscode.Uri.parse(`${vscode.env.uriScheme}://cs-learning-platform.cs-learning-platform/auth-callback`)
+          vscode.Uri.parse(`${vscode.env.uriScheme}://RonTopol.easy-cs-learning-platform/auth-callback`)
         );
 
         // Construct Firebase Auth URL

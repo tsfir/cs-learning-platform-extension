@@ -19,7 +19,7 @@ interface HintRequest {
 }
 
 export class OakleyChatParticipant {
-    public static readonly PARTICIPANT_ID = 'cs-learning-platform.oakley';
+    public static readonly PARTICIPANT_ID = 'easy-cs-learning-platform.oakley';
     private gradingContext: GradingRequest | undefined;
     private hintContext: HintRequest | undefined;
 
