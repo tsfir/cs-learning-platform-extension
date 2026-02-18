@@ -22,6 +22,8 @@ export class LessonWebviewProvider implements vscode.WebviewViewProvider {
         sections: Section[];
     } | undefined;
 
+    private _isLoggedIn: boolean = false;
+
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext,
@@ -41,20 +43,27 @@ export class LessonWebviewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-        // If we have cached content, send it to the view once it's ready
-        if (this._currentContent) {
-            // Use a small timeout to ensure the webview script has loaded
-            setTimeout(() => {
+        // Send initial state
+        setTimeout(() => {
+            this._postMessage({
+                type: 'authState',
+                payload: { isLoggedIn: this._isLoggedIn }
+            });
+
+            if (this._currentContent) {
                 this._postMessage({
                     type: 'updateContext',
                     payload: this._currentContent
                 });
-            }, 500);
-        }
+            }
+        }, 500);
 
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(message => {
             switch (message.type) {
+                case 'login':
+                    vscode.commands.executeCommand('csLearningPlatform.login');
+                    break;
                 case 'openExercise':
                     if (this._currentContext && message.section) {
                         vscode.commands.executeCommand(
@@ -73,6 +82,22 @@ export class LessonWebviewProvider implements vscode.WebviewViewProvider {
                     vscode.window.showErrorMessage(message.value);
                     break;
             }
+        });
+    }
+
+    public updateAuthState(isLoggedIn: boolean) {
+        this._isLoggedIn = isLoggedIn;
+        if (!isLoggedIn) {
+            this._currentContent = undefined;
+            this._currentContext = undefined;
+            this._postMessage({
+                type: 'updateContext',
+                payload: null
+            });
+        }
+        this._postMessage({
+            type: 'authState',
+            payload: { isLoggedIn }
         });
     }
 

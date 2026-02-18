@@ -62,6 +62,17 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Update webview auth state on change
+  firebaseService.onAuthStateChanged((user) => {
+    lessonProvider.updateAuthState(!!user);
+  });
+
+  // Initial auth state check
+  const currentUser = firebaseService.getCurrentUser();
+  if (currentUser) {
+    lessonProvider.updateAuthState(true);
+  }
+
   // Register commands
   registerCommands(context, firebaseService, workspaceManager, courseTreeProvider, lessonProvider, chatParticipant, fileSyncManager);
 

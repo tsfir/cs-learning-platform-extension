@@ -91,7 +91,11 @@ export class FirebaseService {
       this.context.globalState.update('userId', undefined);
       this.context.globalState.update('userEmail', undefined);
     }
+    this._onAuthStateChanged.fire(user);
   }
+
+  private _onAuthStateChanged = new vscode.EventEmitter<User | null>();
+  public readonly onAuthStateChanged = this._onAuthStateChanged.event;
 
   async signInWithGoogle(): Promise<void> {
     try {
