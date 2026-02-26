@@ -2,7 +2,7 @@
   "name": "easy-cs-learning-platform",
   "displayName": "Easy CS Learning Platform",
   "description": "Interactive computer science learning environment with local code execution",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "publisher": "RonTopol",
   "icon": "icon.png",
   "bugs": {

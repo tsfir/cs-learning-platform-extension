@@ -42,7 +42,7 @@ export class OakleyChatParticipant {
 
                 // Check if this is a grading request
                 if (request.command === 'grade' || this.gradingContext) {
-                    await this.handleGrading(request, stream);
+                    await this.handleGrading(request, context, stream);
                     return;
                 }
 
@@ -119,8 +119,25 @@ Explain concepts in a beginner-friendly way. Do not give direct answers assignme
         }
     }
 
+    private extractConversationHistory(history: ReadonlyArray<vscode.ChatRequestTurn | vscode.ChatResponseTurn>): string {
+        if (history.length === 0) return '';
+
+        // Only include free-text messages the student typed — skip grade/hint commands and all AI responses
+        const disputeMessages = history
+            .filter((turn): turn is vscode.ChatRequestTurn =>
+                turn instanceof vscode.ChatRequestTurn &&
+                turn.command !== 'grade' &&
+                turn.command !== 'hint' &&
+                turn.prompt.trim().length > 0
+            )
+            .map(turn => turn.prompt.trim());
+
+        return disputeMessages.join('\n\n');
+    }
+
     private async handleGrading(
         request: vscode.ChatRequest,
+        context: vscode.ChatContext,
         stream: vscode.ChatResponseStream
     ) {
         if (!this.gradingContext) {
@@ -129,15 +146,19 @@ Explain concepts in a beginner-friendly way. Do not give direct answers assignme
         }
 
         try {
-            stream.progress('Grading your answer...');
             const ctx = this.gradingContext;
+            const conversationHistory = this.extractConversationHistory(context.history);
+            const isRegrade = conversationHistory.length > 0;
 
-            // Call grading API
+            stream.progress(isRegrade ? 'Re-evaluating your grade based on our conversation...' : 'Grading your answer...');
+
+            // Call grading API, passing conversation history if this is a re-grade
             const result = await this.gemini.gradeAnswer(
                 ctx.question,
                 ctx.studentAnswer,
                 ctx.maxPoints,
-                ctx.language
+                ctx.language,
+                isRegrade ? conversationHistory : undefined
             );
 
             stream.markdown(`## Grading Result\n\n`);
@@ -159,6 +180,9 @@ Explain concepts in a beginner-friendly way. Do not give direct answers assignme
 
             // Clear context after grading
             this.gradingContext = undefined;
+
+            // Move focus to chat panel so the user can read/interact with the response
+            await vscode.commands.executeCommand('workbench.panel.chat.view.focus');
 
         } catch (error: any) {
             stream.markdown(`Failed to grade exercise: ${error.message}`);

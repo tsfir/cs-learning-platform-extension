@@ -72,14 +72,36 @@ export class GeminiService {
         question: string,
         studentAnswer: string,
         maxPoints: number,
-        language?: string
+        language?: string,
+        conversationHistory?: string
     ): Promise<GradingResult> {
         const apiKey = this.getApiKey();
         if (!apiKey) {
             throw new Error('Gemini API Key is not configured. Please check your settings.');
         }
 
-        const gradingPrompt = `You are Oakley AI, a friendly and encouraging computer science tutor grading a student's answer.
+        const gradingPrompt = conversationHistory
+            ? `You are Oakley AI, a computer science tutor. You previously graded a student's answer and then had a conversation with them about it. Re-evaluate the grade taking the full conversation into account.
+
+**Question/Exercise:**
+${question}
+
+**Student's Answer:**
+${studentAnswer}
+
+**Maximum Points:** ${maxPoints}
+${language ? `**Programming Language:** ${language}` : ''}
+
+**Student's Dispute Messages:**
+${conversationHistory}
+
+**Your Task:**
+Review the conversation above. If the student raised valid points that show their answer deserves a different score, adjust the grade accordingly. Be fair and consistent.
+
+**Response Format (IMPORTANT - follow this exact format):**
+GRADE: [number between 0 and ${maxPoints}]
+FEEDBACK: [Explain your final grade, acknowledging any valid points the student raised]`
+            : `You are Oakley AI, a friendly and encouraging computer science tutor grading a student's answer.
 
 **Question/Exercise:**
 ${question}
