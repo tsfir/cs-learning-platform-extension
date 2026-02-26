@@ -65,7 +65,18 @@ export async function activate(context: vscode.ExtensionContext) {
   // Update webview auth state on change
   firebaseService.onAuthStateChanged((user) => {
     lessonProvider.updateAuthState(!!user);
+    courseTreeProvider.refresh();
   });
+
+  // When the user signs out via the VS Code accounts bar, sign out of Firebase too
+  // Listen directly on the provider's event — more reliable than vscode.authentication.onDidChangeSessions
+  context.subscriptions.push(
+    authProvider.onDidChangeSessions(async (e) => {
+      if ((e.removed?.length ?? 0) > 0) {
+        await firebaseService.signOut();
+      }
+    })
+  );
 
   // Initial auth state check
   const currentUser = firebaseService.getCurrentUser();

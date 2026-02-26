@@ -44,6 +44,7 @@ export class FirebaseService {
   private db: Firestore | null = null;
   private storage: FirebaseStorage | null = null;
   private authListeners: Unsubscribe[] = [];
+  private hadUser = false; // tracks whether we've ever seen a signed-in user
 
   constructor(private context: vscode.ExtensionContext) { }
 
@@ -80,14 +81,16 @@ export class FirebaseService {
 
   private handleAuthStateChanged(user: User | null) {
     if (user) {
-      vscode.window.showInformationMessage(
-        `Signed in as ${user.email}`
-      );
-      // Store user info in global state (persists across workspaces)
+      this.hadUser = true;
+      vscode.window.showInformationMessage(`Signed in as ${user.email}`);
       this.context.globalState.update('userId', user.uid);
       this.context.globalState.update('userEmail', user.email);
     } else {
-      vscode.window.showWarningMessage('Not signed in to CS Learning Platform');
+      // Only warn if the user was previously signed in (real sign-out, not cold-start null)
+      if (this.hadUser) {
+        vscode.window.showWarningMessage('Not signed in to CS Learning Platform');
+      }
+      this.hadUser = false;
       this.context.globalState.update('userId', undefined);
       this.context.globalState.update('userEmail', undefined);
     }

@@ -547,21 +547,61 @@ obj/
   }
 
   /**
-   * Get all active courses
+   * Get all active courses the user created or is enrolled in.
+   * Enrollment is determined by userProgress (doc ID: {userId}_{courseId}).
    */
   async getActiveCourses(): Promise<Course[]> {
-    const { collection, query, where, getDocs } = await import('firebase/firestore');
+    const userId = this.firebase.getUserId();
+    if (!userId) {
+      return [];
+    }
+
+    const { collection, query, where, getDocs, documentId } = await import('firebase/firestore');
     const db = (this.firebase as any).db;
 
-    const q = query(
-      collection(db, 'courses'),
-      where('isActive', '==', true)
+    // Run both queries in parallel
+    const [createdSnapshot, progressSnapshot] = await Promise.all([
+      getDocs(query(
+        collection(db, 'courses'),
+        where('isActive', '==', true),
+        where('createdBy', '==', userId)
+      )),
+      getDocs(query(
+        collection(db, 'userProgress'),
+        where('userId', '==', userId)
+      )),
+    ]);
+
+    const createdCourses = createdSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Course));
+
+    // Get enrolled courseIds not already covered by created courses
+    const createdIds = new Set(createdCourses.map(c => c.id));
+    const enrolledIds = progressSnapshot.docs
+      .map(d => d.data().courseId as string)
+      .filter(id => id && !createdIds.has(id));
+
+    if (enrolledIds.length === 0) {
+      return createdCourses;
+    }
+
+    // Batch fetch enrolled courses (Firestore 'in' supports max 30)
+    const chunks: string[][] = [];
+    for (let i = 0; i < enrolledIds.length; i += 30) {
+      chunks.push(enrolledIds.slice(i, i + 30));
+    }
+
+    const enrolledCourses: Course[] = [];
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        const snapshot = await getDocs(query(
+          collection(db, 'courses'),
+          where('isActive', '==', true),
+          where(documentId(), 'in', chunk)
+        ));
+        snapshot.docs.forEach(d => enrolledCourses.push({ id: d.id, ...d.data() } as Course));
+      })
     );
 
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    } as Course));
+    return [...createdCourses, ...enrolledCourses];
   }
 }
