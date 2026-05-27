@@ -28,7 +28,8 @@ interface GeminiResponse {
     }[];
 }
 
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_API_BASE =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
 
 export class GeminiService {
     constructor(
@@ -136,7 +137,9 @@ FEEDBACK: [Your feedback]`;
             }
         };
 
-        const responseText = await this.makeRequest(apiKey, requestBody);
+        const rawResponse = await this.makeRequest(apiKey, requestBody);
+        // Strip hidden reasoning block the model sometimes includes in its output
+        const responseText = rawResponse.replace(/<hidden_reasoning>[\s\S]*?<\/hidden_reasoning>/gi, '').trim();
 
         // Parse response
         const gradeMatch = responseText.match(/GRADE:\s*(\d+(?:\.\d+)?)/i);
