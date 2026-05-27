@@ -2,12 +2,10 @@ import * as vscode from 'vscode';
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
-  signInWithEmailAndPassword,
   GoogleAuthProvider,
-  signInWithPopup,
-  signInWithCredential, // Added for correct SDK auth
+  signInWithCredential,
   setPersistence,
-  indexedDBLocalPersistence,
+  inMemoryPersistence,
   type Auth,
   type User,
   onAuthStateChanged,
@@ -38,18 +36,41 @@ import {
 } from 'firebase/storage';
 import type { Course, Topic, Lesson, Section, UserProgress, StudentAnswer, InputMetrics } from '../models';
 
+/**
+ * Decode the JWT payload and return the expiry timestamp (seconds), or null if unreadable.
+ * Does NOT verify the signature — only used to check whether the cached token is stale.
+ */
+export function decodeTokenExpiry(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8')) as { exp?: number };
+    return payload.exp ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns true if the JWT has expired (or expires within 30 s — a safe clock-skew buffer).
+ */
+export function isTokenExpired(token: string): boolean {
+  const exp = decodeTokenExpiry(token);
+  if (exp === null) return false;
+  return Date.now() / 1000 > exp - 30;
+}
+
 export class FirebaseService {
   private app: FirebaseApp | null = null;
   private auth: Auth | null = null;
   private db: Firestore | null = null;
   private storage: FirebaseStorage | null = null;
   private authListeners: Unsubscribe[] = [];
-  private hadUser = false; // tracks whether we've ever seen a signed-in user
+  private hadUser = false;
 
   constructor(private context: vscode.ExtensionContext) { }
 
   async initialize(): Promise<void> {
-    // Firebase config from web app
     const firebaseConfig = {
       apiKey: "AIzaSyAj5aDlKy8bX4AaYzqYRzlWr2odIoedstg",
       authDomain: "easycslearning-web-app.firebaseapp.com",
@@ -64,15 +85,13 @@ export class FirebaseService {
     this.db = getFirestore(this.app);
     this.storage = getStorage(this.app);
 
-    // Set persistence to keep auth state across VS Code restarts and workspace changes
     try {
-      await setPersistence(this.auth, indexedDBLocalPersistence);
-      console.log('Firebase auth persistence enabled');
+      await setPersistence(this.auth, inMemoryPersistence);
+      console.log('[FirebaseService] Auth persistence set to inMemoryPersistence');
     } catch (error) {
-      console.error('Failed to set auth persistence:', error);
+      console.error('[FirebaseService] Failed to set auth persistence:', error);
     }
 
-    // Listen for auth state changes
     const unsubscribe = onAuthStateChanged(this.auth, (user) => {
       this.handleAuthStateChanged(user);
     });
@@ -86,7 +105,6 @@ export class FirebaseService {
       this.context.globalState.update('userId', user.uid);
       this.context.globalState.update('userEmail', user.email);
     } else {
-      // Only warn if the user was previously signed in (real sign-out, not cold-start null)
       if (this.hadUser) {
         vscode.window.showWarningMessage('Not signed in to CS Learning Platform');
       }
@@ -102,30 +120,69 @@ export class FirebaseService {
 
   async signInWithGoogle(): Promise<void> {
     try {
-      // Use VS Code's authentication API with our Firebase provider
-      const session = await vscode.authentication.getSession(
+      console.log('[FirebaseService] signInWithGoogle: requesting session...');
+
+      let session = await vscode.authentication.getSession(
         'firebase-google',
         ['email', 'profile'],
         { createIfNone: true }
       );
 
-      if (session) {
-        await this.signInWithSession(session);
+      if (!session) {
+        console.log('[FirebaseService] signInWithGoogle: no session returned');
+        return;
       }
+
+      // If the cached token is already expired, force a fresh browser sign-in
+      if (isTokenExpired(session.accessToken)) {
+        console.log('[FirebaseService] signInWithGoogle: cached token is expired — forcing fresh sign-in');
+        session = await vscode.authentication.getSession(
+          'firebase-google',
+          ['email', 'profile'],
+          { forceNewSession: true }
+        );
+        if (!session) {
+          console.log('[FirebaseService] signInWithGoogle: fresh session not obtained');
+          return;
+        }
+      }
+
+      await this.signInWithSession(session);
     } catch (error: any) {
+      console.error('[FirebaseService] signInWithGoogle error:', error.code, error.message);
+
+      // If Firebase rejected the credential (e.g. token still cached but for wrong project),
+      // force a completely fresh session and retry once.
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-token-expired') {
+        console.log('[FirebaseService] signInWithGoogle: invalid credential — forcing new session and retrying');
+        try {
+          const freshSession = await vscode.authentication.getSession(
+            'firebase-google',
+            ['email', 'profile'],
+            { forceNewSession: true }
+          );
+          if (freshSession) {
+            await this.signInWithSession(freshSession);
+            return;
+          }
+        } catch (retryError: any) {
+          console.error('[FirebaseService] Retry sign-in also failed:', retryError.code, retryError.message);
+          vscode.window.showErrorMessage(`Google sign in failed: ${retryError.message || 'Unknown error'}`);
+          throw retryError;
+        }
+      }
+
       if (error.message === 'User cancelled') {
         vscode.window.showWarningMessage('Sign in cancelled');
       } else {
-        vscode.window.showErrorMessage(
-          `Google sign in failed: ${error.message || 'Unknown error'}`
-        );
+        vscode.window.showErrorMessage(`Google sign in failed: ${error.message || 'Unknown error'}`);
       }
       throw error;
     }
   }
 
   /**
-   * Try to restore an existing session silently
+   * Try to restore an existing session silently (called on extension startup).
    */
   async restoreSession(): Promise<boolean> {
     try {
@@ -135,36 +192,70 @@ export class FirebaseService {
         { createIfNone: false }
       );
 
-      if (session) {
-        console.log('[FirebaseService] Found existing VS Code session. Restoring...');
-        await this.signInWithSession(session);
-        return true;
+      if (!session) {
+        console.log('[FirebaseService] restoreSession: no stored session found');
+        return false;
       }
+
+      // Skip restore if the Google ID token is already expired; the user will
+      // need to sign in again to get a fresh token.
+      if (isTokenExpired(session.accessToken)) {
+        console.log('[FirebaseService] restoreSession: stored token is expired — skipping restore');
+        return false;
+      }
+
+      console.log('[FirebaseService] restoreSession: valid session found, restoring...');
+      await this.signInWithSession(session);
+      return true;
     } catch (error) {
-      console.error('[FirebaseService] Failed to restore session:', error);
+      console.error('[FirebaseService] restoreSession failed:', error);
+      return false;
     }
-    return false;
   }
 
   private async signInWithSession(session: vscode.AuthenticationSession): Promise<void> {
-    console.log('[FirebaseService] Signing in with credential from session...');
+    const token = session.accessToken;
 
-    // Create a Firebase credential from the token
-    const credential = GoogleAuthProvider.credential(session.accessToken);
+    // ── Diagnostic logging (no sensitive data leaked — only metadata) ──────────
+    console.log('[FirebaseService] signInWithSession: token length =', token.length);
+    console.log('[FirebaseService] signInWithSession: token prefix =', token.substring(0, 20) + '...');
 
-    // Sign in to the Firebase SDK with the credential
+    const parts = token.split('.');
+    console.log('[FirebaseService] signInWithSession: JWT parts count =', parts.length, '(expected 3)');
+
+    if (parts.length === 3) {
+      try {
+        const payload = JSON.parse(
+          Buffer.from(parts[1], 'base64').toString('utf8')
+        ) as { iss?: string; aud?: string; email?: string; exp?: number; sub?: string };
+
+        console.log('[FirebaseService] signInWithSession: token.iss =', payload.iss);
+        console.log('[FirebaseService] signInWithSession: token.aud =', payload.aud);
+        console.log('[FirebaseService] signInWithSession: token.email =', payload.email);
+        console.log('[FirebaseService] signInWithSession: token.sub (Google UID) =', payload.sub);
+
+        if (payload.exp) {
+          const expDate = new Date(payload.exp * 1000);
+          const nowSec = Date.now() / 1000;
+          const remainingSec = Math.round(payload.exp - nowSec);
+          console.log('[FirebaseService] signInWithSession: token.exp =', expDate.toISOString(),
+            '| seconds remaining =', remainingSec);
+        }
+      } catch (e) {
+        console.warn('[FirebaseService] signInWithSession: could not decode token payload —', e);
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
+    console.log('[FirebaseService] signInWithSession: calling signInWithCredential...');
+    const credential = GoogleAuthProvider.credential(token);
     const userCredential = await signInWithCredential(this.auth!, credential);
     const user = userCredential.user;
 
-    console.log('[FirebaseService] Signed in to Firebase SDK as:', user.email, user.uid);
+    console.log('[FirebaseService] signInWithSession: signed in as', user.email, '| uid =', user.uid);
 
-    // Store the ACTUAL Firebase UID
     this.context.globalState.update('userId', user.uid);
     this.context.globalState.update('userEmail', user.email);
-
-    vscode.window.showInformationMessage(
-      `Signed in as ${user.email}`
-    );
   }
 
   async signInWithEmailPassword(): Promise<void> {
@@ -172,48 +263,32 @@ export class FirebaseService {
       prompt: 'Enter your CS Learning Platform email',
       placeHolder: 'user@example.com',
     });
-
-    if (!email) {
-      return;
-    }
+    if (!email) return;
 
     const password = await vscode.window.showInputBox({
       prompt: 'Enter your password',
       password: true,
     });
-
-    if (!password) {
-      return;
-    }
+    if (!password) return;
 
     try {
       const { signInWithEmailAndPassword } = await import('firebase/auth');
       await signInWithEmailAndPassword(this.auth!, email, password);
-      vscode.window.showInformationMessage('Successfully signed in!');
     } catch (error: any) {
-      vscode.window.showErrorMessage(
-        `Sign in failed: ${error.message || 'Unknown error'}`
-      );
+      vscode.window.showErrorMessage(`Sign in failed: ${error.message || 'Unknown error'}`);
       throw error;
     }
   }
 
   async signIn(): Promise<void> {
-    // Show quick pick for sign-in method
     const method = await vscode.window.showQuickPick(
       [
         { label: 'Sign in with Google', value: 'google' },
         { label: 'Sign in with Email/Password', value: 'email' },
       ],
-      {
-        placeHolder: 'Choose sign-in method',
-      }
+      { placeHolder: 'Choose sign-in method' }
     );
-
-    if (!method) {
-      return;
-    }
-
+    if (!method) return;
     if (method.value === 'google') {
       await this.signInWithGoogle();
     } else {
@@ -234,7 +309,8 @@ export class FirebaseService {
     return this.context.globalState.get<string>('userId');
   }
 
-  // Firestore operations
+  // ── Firestore operations ────────────────────────────────────────────────────
+
   async getCourse(courseId: string): Promise<Course | null> {
     const docRef = doc(this.db!, 'courses', courseId);
     const docSnap = await getDoc(docRef);
@@ -279,16 +355,10 @@ export class FirebaseService {
       where('lessonId', '==', lessonId)
     );
     const snapshot = await getDocs(q);
-    const sections = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    } as Section));
+    const sections = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Section));
     return sections.sort((a, b) => a.orderIndex - b.orderIndex);
   }
 
-  /**
-   * Get student answer for a specific section
-   */
   async getStudentAnswer(sectionId: string, userId: string): Promise<StudentAnswer | null> {
     const q = query(
       collection(this.db!, 'studentAnswers'),
@@ -296,15 +366,10 @@ export class FirebaseService {
       where('userId', '==', userId)
     );
     const snapshot = await getDocs(q);
-    if (snapshot.empty) {
-      return null;
-    }
+    if (snapshot.empty) return null;
     return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as StudentAnswer;
   }
 
-  /**
-   * Save student answer for a specific section
-   */
   async saveStudentAnswer(
     sectionId: string,
     userId: string,
@@ -322,48 +387,24 @@ export class FirebaseService {
     const snapshot = await getDocs(q);
 
     if (!snapshot.empty) {
-      // Update existing answer
       const docRef = snapshot.docs[0].ref;
-      const updateData: Record<string, unknown> = {
-        answer: content,
-        updatedAt: serverTimestamp()
-      };
-      if (inputMetrics) {
-        updateData.inputMetrics = inputMetrics;
-      }
+      const updateData: Record<string, unknown> = { answer: content, updatedAt: serverTimestamp() };
+      if (inputMetrics) updateData.inputMetrics = inputMetrics;
       await updateDoc(docRef, updateData);
     } else {
-      // Create new answer
       const data: Record<string, unknown> = {
-        sectionId,
-        userId,
-        lessonId,
-        answer: content,
-        type,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        sectionId, userId, lessonId,
+        answer: content, type,
+        createdAt: serverTimestamp(), updatedAt: serverTimestamp()
       };
-
-      if (courseId) {
-        data.courseId = courseId;
-      }
-      if (inputMetrics) {
-        data.inputMetrics = inputMetrics;
-      }
-
+      if (courseId) data.courseId = courseId;
+      if (inputMetrics) data.inputMetrics = inputMetrics;
       await addDoc(collection(this.db!, 'studentAnswers'), data);
     }
   }
 
-  // Real-time listeners
-  subscribeToLesson(
-    lessonId: string,
-    callback: (sections: Section[]) => void
-  ): Unsubscribe {
-    const q = query(
-      collection(this.db!, 'sections'),
-      where('lessonId', '==', lessonId)
-    );
+  subscribeToLesson(lessonId: string, callback: (sections: Section[]) => void): Unsubscribe {
+    const q = query(collection(this.db!, 'sections'), where('lessonId', '==', lessonId));
     return onSnapshot(q, (snapshot) => {
       const sections = snapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() } as Section))
@@ -380,15 +421,10 @@ export class FirebaseService {
     const progressId = `${userId}_${courseId}`;
     const docRef = doc(this.db!, 'userProgress', progressId);
     return onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        callback(snapshot.data() as UserProgress);
-      } else {
-        callback(null);
-      }
+      callback(snapshot.exists() ? (snapshot.data() as UserProgress) : null);
     });
   }
 
-  // Submit exercise code
   async submitExerciseCode(
     userId: string,
     lessonId: string,
@@ -400,36 +436,19 @@ export class FirebaseService {
       collection(this.db!, 'codeSubmissions'),
       `${userId}_${lessonId}_${exerciseId}`
     );
-
-    await setDoc(
-      submissionRef,
-      {
-        userId,
-        lessonId,
-        exerciseId,
-        code,
-        language,
-        submittedAt: new Date().toISOString(),
-        source: 'vscode',
-      },
-      { merge: true }
-    );
+    await setDoc(submissionRef, {
+      userId, lessonId, exerciseId, code, language,
+      submittedAt: new Date().toISOString(),
+      source: 'vscode',
+    }, { merge: true });
   }
 
-  // Upload file to Storage
-  async uploadFile(
-    path: string,
-    file: Buffer,
-    metadata?: Record<string, string>
-  ): Promise<string> {
+  async uploadFile(path: string, file: Buffer, metadata?: Record<string, string>): Promise<string> {
     const storageRef = ref(this.storage!, path);
     await uploadBytes(storageRef, file, metadata);
     return await getDownloadURL(storageRef);
   }
 
-  /**
-   * Save student grade and feedback
-   */
   async saveStudentGrade(
     lessonId: string,
     sectionId: string,
@@ -437,7 +456,6 @@ export class FirebaseService {
     grade: number,
     feedback: string
   ): Promise<void> {
-
     try {
       const answersRef = collection(this.db!, 'studentAnswers');
       const q = query(
@@ -446,32 +464,18 @@ export class FirebaseService {
         where('sectionId', '==', sectionId),
         where('userId', '==', userId)
       );
-
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
-        // Update existing
-        const docRef = snapshot.docs[0].ref;
-        await updateDoc(docRef, {
-          grade,
-          feedback,
-          gradedAt: serverTimestamp() // Use server timestamp
-        });
+        await updateDoc(snapshot.docs[0].ref, { grade, feedback, gradedAt: serverTimestamp() });
       } else {
-        // If answer doesn't exist (e.g. graded without saving?), create it
-        // This case might happen if grading file content directly without explicit submit
         await addDoc(answersRef, {
-          lessonId,
-          sectionId,
-          userId,
-          grade,
-          feedback,
-          gradedAt: serverTimestamp(),
-          createdAt: serverTimestamp()
+          lessonId, sectionId, userId, grade, feedback,
+          gradedAt: serverTimestamp(), createdAt: serverTimestamp()
         });
       }
     } catch (error) {
-      console.error('Error saving grade:', error);
+      console.error('[FirebaseService] Error saving grade:', error);
       throw error;
     }
   }

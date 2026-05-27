@@ -108,15 +108,16 @@ export class LessonWebviewProvider implements vscode.WebviewViewProvider {
         lessonName: string,
         sections: Section[]
     ) {
-        console.log('Provider: updateLessonContent called', { lessonName, sectionsLength: sections.length });
+        const visibleSections = sections.filter(s => s.type === 'code' || s.type === 'text');
+        console.log('Provider: updateLessonContent called', { lessonName, total: sections.length, visible: visibleSections.length });
         this._currentContext = { courseId, topicId, lessonId };
-        this._currentContent = { lessonName, sections };
+        this._currentContent = { lessonName, sections: visibleSections };
 
         this._postMessage({
             type: 'updateContext',
             payload: {
                 lessonName,
-                sections
+                sections: visibleSections
             }
         });
 

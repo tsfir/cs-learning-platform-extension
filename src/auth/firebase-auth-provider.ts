@@ -88,6 +88,8 @@ export class FirebaseAuthenticationProvider implements vscode.AuthenticationProv
         throw new Error('Login failed');
       }
 
+      console.log('[FirebaseAuth] createSession: received token from web app, length =', token.length);
+
       // Verify token with Firebase and get user info
       const userInfo = await this.getUserInfo(token);
 
@@ -257,6 +259,8 @@ export class FirebaseAuthenticationProvider implements vscode.AuthenticationProv
       // Map Google profile to session account
       // Note: data.sub is the Google UID, not Firebase UID.
       // The actual Firebase sign-in happens in FirebaseService.
+      console.log('[FirebaseAuth] Token verified: uid =', data.sub, '| email =', data.email, '| aud =', data.aud);
+
       return {
         uid: data.sub,
         email: data.email,
