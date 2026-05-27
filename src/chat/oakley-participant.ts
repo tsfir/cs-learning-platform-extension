@@ -10,6 +10,7 @@ interface GradingRequest {
     studentAnswer: string;
     maxPoints: number;
     language: string;
+    gradingPromptTemplate?: string | null;
 }
 
 interface HintRequest {
@@ -158,7 +159,8 @@ Explain concepts in a beginner-friendly way. Do not give direct answers assignme
                 ctx.studentAnswer,
                 ctx.maxPoints,
                 ctx.language,
-                isRegrade ? conversationHistory : undefined
+                isRegrade ? conversationHistory : undefined,
+                ctx.gradingPromptTemplate
             );
 
             stream.markdown(`## Grading Result\n\n`);

@@ -323,8 +323,11 @@ function registerCommands(
         }
 
         try {
-          // Read student code
-          const studentCode = await fs.readFile(filePath, 'utf-8');
+          // Read student code and fetch course for custom grading prompt
+          const [studentCode, course] = await Promise.all([
+            fs.readFile(filePath, 'utf-8'),
+            firebase.getCourse(courseId)
+          ]);
 
           // Set context for chat
           chatParticipant.setGradingContext({
@@ -334,7 +337,8 @@ function registerCommands(
             question: section.content || section.title,
             studentAnswer: studentCode,
             maxPoints: section.points || 10,
-            language: section.language || 'text'
+            language: section.language || 'text',
+            gradingPromptTemplate: course?.gradingPromptTemplate ?? null
           });
 
           // Open Chat

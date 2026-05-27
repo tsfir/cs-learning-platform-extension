@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { buildGradingSystemPrompt } from '../utils/prompt-builder';
 
 export interface GradingResult {
     grade: number;
@@ -73,15 +74,18 @@ export class GeminiService {
         studentAnswer: string,
         maxPoints: number,
         language?: string,
-        conversationHistory?: string
+        conversationHistory?: string,
+        customPromptTemplate?: string | null
     ): Promise<GradingResult> {
         const apiKey = this.getApiKey();
         if (!apiKey) {
             throw new Error('Gemini API Key is not configured. Please check your settings.');
         }
 
+        const systemRules = buildGradingSystemPrompt(customPromptTemplate, maxPoints);
+
         const gradingPrompt = conversationHistory
-            ? `You are Oakley AI, a computer science tutor. You previously graded a student's answer and then had a conversation with them about it. Re-evaluate the grade taking the full conversation into account.
+            ? `You previously graded a student's answer and then had a conversation with them about it. Re-evaluate the grade taking the full conversation into account.
 
 **Question/Exercise:**
 ${question}
@@ -101,9 +105,7 @@ Review the conversation above. If the student raised valid points that show thei
 **Response Format (IMPORTANT - follow this exact format):**
 GRADE: [number between 0 and ${maxPoints}]
 FEEDBACK: [Explain your final grade, acknowledging any valid points the student raised]`
-            : `You are Oakley AI, a friendly and encouraging computer science tutor grading a student's answer.
-
-**Question/Exercise:**
+            : `**Question/Exercise:**
 ${question}
 
 **Student's Answer:**
@@ -112,22 +114,18 @@ ${studentAnswer}
 **Maximum Points:** ${maxPoints}
 ${language ? `**Programming Language:** ${language}` : ''}
 
-**Your Task:**
-1. Evaluate the student's answer for correctness, completeness, and code quality
-2. Award points from 0 to ${maxPoints} based on quality
-3. Provide encouraging, constructive feedback
-
 **Response Format (IMPORTANT - follow this exact format):**
 GRADE: [number between 0 and ${maxPoints}]
-FEEDBACK: [Your friendly, encouraging feedback explaining the grade and suggesting improvements if needed]
-
-Remember to be encouraging and helpful.`;
+FEEDBACK: [Your feedback]`;
 
         const requestBody: GeminiRequest = {
             contents: [{
                 role: 'user',
                 parts: [{ text: gradingPrompt }]
-            }]
+            }],
+            systemInstruction: {
+                parts: [{ text: systemRules }]
+            }
         };
 
         const responseText = await this.makeRequest(apiKey, requestBody);

@@ -15,8 +15,9 @@ export interface Course {
   createdBy: string;
   orderIndex: number;
   isActive: boolean;
-  gitTemplateRepository?: string; // Git repo URL for project template
-  enrolledStudents?: string[]; // Array of student IDs enrolled in the course
+  gitTemplateRepository?: string;
+  gradingPromptTemplate?: string;
+  enrolledStudents?: string[];
 }
 
 export interface Topic {
