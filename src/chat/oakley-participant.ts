@@ -11,6 +11,7 @@ interface GradingRequest {
     maxPoints: number;
     language: string;
     gradingPromptTemplate?: string | null;
+    gradingPromptMode?: 'default' | 'extend' | 'override';
 }
 
 interface HintRequest {
@@ -160,7 +161,8 @@ Explain concepts in a beginner-friendly way. Do not give direct answers assignme
                 ctx.maxPoints,
                 ctx.language,
                 isRegrade ? conversationHistory : undefined,
-                ctx.gradingPromptTemplate
+                ctx.gradingPromptTemplate,
+                ctx.gradingPromptMode
             );
 
             stream.markdown(`## Grading Result\n\n`);

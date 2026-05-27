@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { buildGradingSystemPrompt } from '../utils/prompt-builder';
+import { buildGradingSystemPrompt, PromptMode } from '../utils/prompt-builder';
 
 export interface GradingResult {
     grade: number;
@@ -75,14 +75,15 @@ export class GeminiService {
         maxPoints: number,
         language?: string,
         conversationHistory?: string,
-        customPromptTemplate?: string | null
+        customPromptTemplate?: string | null,
+        gradingPromptMode?: PromptMode
     ): Promise<GradingResult> {
         const apiKey = this.getApiKey();
         if (!apiKey) {
             throw new Error('Gemini API Key is not configured. Please check your settings.');
         }
 
-        const systemRules = buildGradingSystemPrompt(customPromptTemplate, maxPoints);
+        const systemRules = buildGradingSystemPrompt(customPromptTemplate, maxPoints, gradingPromptMode);
 
         const gradingPrompt = conversationHistory
             ? `You previously graded a student's answer and then had a conversation with them about it. Re-evaluate the grade taking the full conversation into account.

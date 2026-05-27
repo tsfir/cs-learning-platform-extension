@@ -17,6 +17,7 @@ export interface Course {
   isActive: boolean;
   gitTemplateRepository?: string;
   gradingPromptTemplate?: string;
+  gradingPromptMode?: 'default' | 'extend' | 'override';
   enrolledStudents?: string[];
 }
 

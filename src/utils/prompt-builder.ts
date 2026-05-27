@@ -75,14 +75,26 @@ GRADE: [number between 0 and {{maxPoints}}]
 FEEDBACK: [Your feedback in Hebrew]
 `;
 
+export type PromptMode = 'default' | 'extend' | 'override';
+
 /**
  * Build the grading system prompt, substituting {{maxPoints}} with the actual value.
- * Falls back to the default prompt when no custom template is provided.
+ * Mirrors easycslearning_web/src/utils/prompt-builder.ts — keep both in sync.
  */
 export function buildGradingSystemPrompt(
     customTemplate: string | null | undefined,
-    maxPoints: number
+    maxPoints: number,
+    mode?: PromptMode
 ): string {
-    const template = customTemplate?.trim() || DEFAULT_GRADING_SYSTEM_PROMPT;
-    return template.replace(/\{\{maxPoints\}\}/g, String(maxPoints));
+    const sub = (s: string) => s.replace(/\{\{maxPoints\}\}/g, String(maxPoints));
+    const template = customTemplate?.trim();
+    const resolved = mode ?? (template ? 'override' : 'default');
+
+    if (resolved === 'default' || !template) {
+        return sub(DEFAULT_GRADING_SYSTEM_PROMPT);
+    }
+    if (resolved === 'extend') {
+        return `${sub(DEFAULT_GRADING_SYSTEM_PROMPT)}\n\n**COURSE-SPECIFIC ADDITIONAL RULES (apply on top of the above, and override any conflicting rule):**\n${sub(template)}`;
+    }
+    return sub(template);
 }
