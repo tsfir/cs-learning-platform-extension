@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { buildGradingSystemPrompt, PromptMode } from '../utils/prompt-builder';
+import { buildGradingSystemPrompt, PromptMode, DEFAULT_GRADING_SYSTEM_PROMPT, DEFAULT_HINT_PROMPT } from '../utils/prompt-builder';
+import type { FirebaseService } from './firebase-service';
 
 export interface GradingResult {
     grade: number;
@@ -30,7 +31,10 @@ interface GeminiResponse {
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 export class GeminiService {
-    constructor(private context: vscode.ExtensionContext) { }
+    constructor(
+        private context: vscode.ExtensionContext,
+        private firebase?: FirebaseService
+    ) { }
 
     private getApiKey(): string | undefined {
         return vscode.workspace.getConfiguration('csLearningPlatform').get('geminiApiKey');
@@ -83,7 +87,10 @@ export class GeminiService {
             throw new Error('Gemini API Key is not configured. Please check your settings.');
         }
 
-        const systemRules = buildGradingSystemPrompt(customPromptTemplate, maxPoints, gradingPromptMode);
+        const dbDefault = this.firebase
+            ? await this.firebase.getSystemPrompt('grading', DEFAULT_GRADING_SYSTEM_PROMPT)
+            : DEFAULT_GRADING_SYSTEM_PROMPT;
+        const systemRules = buildGradingSystemPrompt(customPromptTemplate, maxPoints, gradingPromptMode, dbDefault);
 
         const gradingPrompt = conversationHistory
             ? `You previously graded a student's answer and then had a conversation with them about it. Re-evaluate the grade taking the full conversation into account.
@@ -162,35 +169,20 @@ FEEDBACK: [Your feedback]`;
             throw new Error('Gemini API Key is not configured. Please check your settings.');
         }
 
-        const hintPrompt = `You are Oakley AI, a friendly and encouraging computer science tutor helping a student who is stuck on a coding exercise.
+        const hintSystem = this.firebase
+            ? await this.firebase.getSystemPrompt('hint', DEFAULT_HINT_PROMPT)
+            : DEFAULT_HINT_PROMPT;
 
-**Exercise/Question:**
+        const hintUserMessage = `**Exercise/Question:**
 ${question}
 
 **Student's Current Code:**
 ${studentAnswer}
-
-${language ? `**Programming Language:** ${language}` : ''}
-
-**Your Task:**
-Provide a helpful hint that will guide the student toward the solution WITHOUT giving away the answer directly.
-
-**Guidelines for your hint:**
-1. Identify what the student might be missing or doing incorrectly
-2. Point them in the right direction with a conceptual hint
-3. You may suggest what to think about or what concept to review
-4. Do NOT provide the actual code solution
-5. Keep it encouraging and supportive
-6. Be concise (2-4 sentences max)
-
-**Response:**
-Provide only the hint, nothing else.`;
+${language ? `\n**Programming Language:** ${language}` : ''}`;
 
         const requestBody: GeminiRequest = {
-            contents: [{
-                role: 'user',
-                parts: [{ text: hintPrompt }]
-            }]
+            contents: [{ role: 'user', parts: [{ text: hintUserMessage }] }],
+            systemInstruction: { parts: [{ text: hintSystem }] },
         };
 
         return this.makeRequest(apiKey, requestBody);

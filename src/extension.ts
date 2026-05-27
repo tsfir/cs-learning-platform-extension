@@ -33,8 +33,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // Initialize workspace manager
   const workspaceManager = new WorkspaceManager(context, firebaseService);
 
-  // Initialize Gemini Service
-  const geminiService = new GeminiService(context);
+  // Initialize Gemini Service (pass firebase so it can fetch system prompts from DB)
+  const geminiService = new GeminiService(context, firebaseService);
 
   // Initialize Chat Participant
   const chatParticipant = new OakleyChatParticipant(context, geminiService, firebaseService);

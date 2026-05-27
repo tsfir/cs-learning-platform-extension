@@ -480,6 +480,31 @@ export class FirebaseService {
     }
   }
 
+  // ── System prompts (session cache) ─────────────────────────────────────────
+
+  private readonly _promptCache = new Map<string, string>();
+
+  /**
+   * Return the system prompt for `id` from Firestore.
+   * Reads at most once per session; falls back to the provided default on error.
+   */
+  async getSystemPrompt(id: string, fallback: string): Promise<string> {
+    if (this._promptCache.has(id)) return this._promptCache.get(id)!;
+    try {
+      const snap = await getDoc(doc(this.db!, 'systemPrompts', id));
+      if (snap.exists()) {
+        const content = (snap.data()?.content as string | undefined)?.trim() ?? '';
+        if (content) {
+          this._promptCache.set(id, content);
+          return content;
+        }
+      }
+    } catch (e) {
+      console.warn(`[FirebaseService] Could not fetch system prompt "${id}" — using fallback.`, e);
+    }
+    return fallback;
+  }
+
   dispose() {
     this.authListeners.forEach((unsubscribe) => unsubscribe());
   }

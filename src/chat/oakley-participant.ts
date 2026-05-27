@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { GeminiService } from '../services/gemini-service';
 import { FirebaseService } from '../services/firebase-service';
+import { DEFAULT_TUTORING_PROMPT } from '../utils/prompt-builder';
 
 interface GradingRequest {
     courseId: string;
@@ -77,9 +78,7 @@ export class OakleyChatParticipant {
             // in the same way, but let's assume single turn or minimal context for now.
             // We can use the prompt directly.
 
-            const systemPrompt = `You are Oakley AI, a friendly and encouraging computer science tutor.
-Help the student understand concepts. Be encouraging, clear, and concise.
-Explain concepts in a beginner-friendly way. Do not give direct answers assignments.`;
+            const systemPrompt = await this.firebase.getSystemPrompt('tutoring', DEFAULT_TUTORING_PROMPT);
 
             const response = await this.gemini.sendMessage([
                 { role: 'user', content: request.prompt }

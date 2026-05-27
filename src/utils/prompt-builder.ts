@@ -75,6 +75,24 @@ GRADE: [number between 0 and {{maxPoints}}]
 FEEDBACK: [Your feedback in Hebrew]
 `;
 
+export const DEFAULT_HINT_PROMPT = `You are Oakley AI, a friendly and encouraging computer science tutor helping a student who is stuck on a coding exercise.
+
+Your task: Provide a helpful hint that will guide the student toward the solution WITHOUT giving away the answer directly.
+
+Guidelines:
+1. Identify what the student might be missing or doing incorrectly.
+2. Point them in the right direction with a conceptual hint.
+3. Do NOT provide the actual code solution.
+4. Keep it encouraging and supportive.
+5. Be concise (2–4 sentences max).
+6. Always respond IN HEBREW.`;
+
+export const DEFAULT_TUTORING_PROMPT = `You are Oakley AI, a friendly and encouraging computer science tutor.
+
+Help the student understand the lesson content. Be encouraging, clear, and concise.
+Explain concepts in a beginner-friendly way. Do not give direct answers to assignments.
+Always respond in the same language the student uses.`;
+
 export type PromptMode = 'default' | 'extend' | 'override';
 
 /**
@@ -84,17 +102,19 @@ export type PromptMode = 'default' | 'extend' | 'override';
 export function buildGradingSystemPrompt(
     customTemplate: string | null | undefined,
     maxPoints: number,
-    mode?: PromptMode
+    mode?: PromptMode,
+    dbDefault?: string
 ): string {
     const sub = (s: string) => s.replace(/\{\{maxPoints\}\}/g, String(maxPoints));
     const template = customTemplate?.trim();
     const resolved = mode ?? (template ? 'override' : 'default');
+    const base = dbDefault?.trim() || DEFAULT_GRADING_SYSTEM_PROMPT;
 
     if (resolved === 'default' || !template) {
-        return sub(DEFAULT_GRADING_SYSTEM_PROMPT);
+        return sub(base);
     }
     if (resolved === 'extend') {
-        return `${sub(DEFAULT_GRADING_SYSTEM_PROMPT)}\n\n**COURSE-SPECIFIC ADDITIONAL RULES (apply on top of the above, and override any conflicting rule):**\n${sub(template)}`;
+        return `${sub(base)}\n\n**COURSE-SPECIFIC ADDITIONAL RULES (apply on top of the above, and override any conflicting rule):**\n${sub(template)}`;
     }
     return sub(template);
 }
