@@ -339,7 +339,8 @@ function registerCommands(
             maxPoints: section.points || 10,
             language: section.language || 'text',
             gradingPromptTemplate: course?.gradingPromptTemplate ?? null,
-            gradingPromptMode: course?.gradingPromptMode
+            gradingPromptMode: course?.gradingPromptMode,
+            gradingIndicator: section.gradingIndicator
           });
 
           // Open Chat

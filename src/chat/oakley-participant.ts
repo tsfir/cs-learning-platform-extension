@@ -13,6 +13,7 @@ interface GradingRequest {
     language: string;
     gradingPromptTemplate?: string | null;
     gradingPromptMode?: 'default' | 'extend' | 'override';
+    gradingIndicator?: string;
 }
 
 interface HintRequest {
@@ -161,7 +162,8 @@ export class OakleyChatParticipant {
                 ctx.language,
                 isRegrade ? conversationHistory : undefined,
                 ctx.gradingPromptTemplate,
-                ctx.gradingPromptMode
+                ctx.gradingPromptMode,
+                ctx.gradingIndicator
             );
 
             stream.markdown(`## Grading Result\n\n`);
@@ -175,8 +177,9 @@ export class OakleyChatParticipant {
                     ctx.lessonId,
                     ctx.sectionId,
                     userId,
-                    result.grade, // We store the grade
-                    result.feedback
+                    result.grade,
+                    result.feedback,
+                    ctx.maxPoints
                 );
                 stream.markdown('\n\n*(Grade saved to your progress)*');
             }

@@ -23,6 +23,7 @@ import {
   where,
   orderBy,
   addDoc,
+  arrayUnion,
   serverTimestamp,
   type Firestore,
   type Unsubscribe,
@@ -454,9 +455,13 @@ export class FirebaseService {
     sectionId: string,
     userId: string,
     grade: number,
-    feedback: string
+    feedback: string,
+    maxPoints?: number
   ): Promise<void> {
     try {
+      const now = new Date().toISOString();
+
+      // ── 1. Persist grade + aiFeedback on studentAnswers ──────────────────
       const answersRef = collection(this.db!, 'studentAnswers');
       const q = query(
         answersRef,
@@ -467,11 +472,43 @@ export class FirebaseService {
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
-        await updateDoc(snapshot.docs[0].ref, { grade, feedback, gradedAt: serverTimestamp() });
+        await updateDoc(snapshot.docs[0].ref, {
+          grade, aiFeedback: feedback, updatedAt: now,
+        });
       } else {
         await addDoc(answersRef, {
-          lessonId, sectionId, userId, grade, feedback,
-          gradedAt: serverTimestamp(), createdAt: serverTimestamp()
+          lessonId, sectionId, userId, grade, aiFeedback: feedback,
+          createdAt: now, updatedAt: now,
+        });
+      }
+
+      // ── 2. Write feedback as assistant message to aiChats ────────────────
+      const pct = maxPoints ? Math.round((grade / maxPoints) * 100) : null;
+      const chatMessage = {
+        role: 'assistant',
+        content: pct != null
+          ? `**ציון: ${grade}/${maxPoints} (${pct}%)**\n\n${feedback}`
+          : feedback,
+        timestamp: now,
+      };
+
+      const chatSnap = await getDocs(query(
+        collection(this.db!, 'aiChats'),
+        where('userId', '==', userId),
+        where('lessonId', '==', lessonId)
+      ));
+
+      if (chatSnap.empty) {
+        await addDoc(collection(this.db!, 'aiChats'), {
+          userId, lessonId,
+          messages: [chatMessage],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await updateDoc(chatSnap.docs[0].ref, {
+          messages: arrayUnion(chatMessage),
+          updatedAt: serverTimestamp(),
         });
       }
     } catch (error) {

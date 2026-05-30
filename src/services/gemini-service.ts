@@ -81,7 +81,8 @@ export class GeminiService {
         language?: string,
         conversationHistory?: string,
         customPromptTemplate?: string | null,
-        gradingPromptMode?: PromptMode
+        gradingPromptMode?: PromptMode,
+        gradingIndicator?: string
     ): Promise<GradingResult> {
         const apiKey = this.getApiKey();
         if (!apiKey) {
@@ -93,17 +94,20 @@ export class GeminiService {
             : DEFAULT_GRADING_SYSTEM_PROMPT;
         const systemRules = buildGradingSystemPrompt(customPromptTemplate, maxPoints, gradingPromptMode, dbDefault);
 
+        const indicatorBlock = gradingIndicator?.trim()
+            ? `\n**⚠️ GRADING INDICATOR — MANDATORY RULES (override any conflicting general rubric rule):**\nThe teacher has specified the following grading rules for this section. You MUST follow them exactly:\n${gradingIndicator.trim()}\n`
+            : '';
+
         const gradingPrompt = conversationHistory
             ? `You previously graded a student's answer and then had a conversation with them about it. Re-evaluate the grade taking the full conversation into account.
 
 **Question/Exercise:**
 ${question}
 
+**Maximum Points:** ${maxPoints}
+${language ? `**Programming Language:** ${language}` : ''}${indicatorBlock}
 **Student's Answer:**
 ${studentAnswer}
-
-**Maximum Points:** ${maxPoints}
-${language ? `**Programming Language:** ${language}` : ''}
 
 **Student's Dispute Messages:**
 ${conversationHistory}
@@ -117,11 +121,10 @@ FEEDBACK: [Explain your final grade, acknowledging any valid points the student 
             : `**Question/Exercise:**
 ${question}
 
+**Maximum Points:** ${maxPoints}
+${language ? `**Programming Language:** ${language}` : ''}${indicatorBlock}
 **Student's Answer:**
 ${studentAnswer}
-
-**Maximum Points:** ${maxPoints}
-${language ? `**Programming Language:** ${language}` : ''}
 
 **Response Format (IMPORTANT - follow this exact format):**
 GRADE: [number between 0 and ${maxPoints}]

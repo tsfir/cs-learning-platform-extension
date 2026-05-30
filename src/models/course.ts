@@ -50,6 +50,7 @@ export interface Section {
   orderIndex: number;
   language?: string; // For code sections
   starterValue?: string; // Initial code for exercises
+  gradingIndicator?: string; // Teacher-defined mandatory rules for the AI grading process
 }
 
 export interface StudentAnswer {
@@ -61,6 +62,7 @@ export interface StudentAnswer {
   answer: string;
   type: 'code' | 'interactive';
   grade?: number;
+  aiFeedback?: string;
   createdAt: string;
   updatedAt: string;
 }
