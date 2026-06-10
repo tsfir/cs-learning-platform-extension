@@ -28,6 +28,7 @@ export interface Topic {
   topicName: string;
   level: string;
   orderIndex: number;
+  flatExercises?: boolean;
 }
 
 export interface Lesson {
@@ -39,6 +40,7 @@ export interface Lesson {
   lessonType: 'content' | 'exercise' | 'quiz';
   orderIndex: number;
   isPublished?: boolean;
+  exercisePath?: string;
 }
 
 export interface Section {

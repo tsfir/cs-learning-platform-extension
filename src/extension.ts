@@ -7,7 +7,6 @@ import { LessonWebviewProvider } from './providers/lesson-webview-provider';
 import { OakleyChatParticipant } from './chat/oakley-participant';
 import { GeminiService } from './services/gemini-service';
 import { FileSyncManager } from './sync/file-sync-manager';
-import * as path from 'path';
 import * as fs from 'fs/promises'; // for reading exercise file
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -241,32 +240,12 @@ function registerCommands(
             );
 
             // Start file sync for this lesson
+            // Use the path computed by WorkspaceManager (handles both standard and STEM mode)
             if (sections) {
-              const lessonFolderName = lesson.lessonSlug || lessonId;
-              const topicFolderName = topic?.topicSlug || topicId;
-
-              const userId = firebase.getUserId();
-              const course = await firebase.getCourse(courseId);
-              const courseFolderName = course?.courseSlug || courseId;
-
-              // We need the full path to the exercises folder for the sync manager
-              const workspaceRoot = workspace.getWorkspaceRoot();
-              const exercisesPath = path.join(
-                workspaceRoot,
-                userId!,
-                courseFolderName,
-                'topics',
-                topicFolderName,
-                lessonFolderName,
-                'exercises'
-              );
-
-              fileSyncManager.trackLesson(
-                exercisesPath,
-                lessonId,
-                sections,
-                courseId
-              );
+              const exercisesPath = workspace.getCurrentExercisesPath();
+              if (exercisesPath) {
+                fileSyncManager.trackLesson(exercisesPath, lessonId, sections, courseId);
+              }
             }
           }
         } catch (error: any) {
@@ -412,26 +391,27 @@ function registerCommands(
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('csLearningPlatform.syncNow', () => {
-      vscode.window.showInformationMessage(
-        'Sync now (Phase 3 implementation)'
-      );
+    vscode.commands.registerCommand('csLearningPlatform.syncNow', async () => {
+      const activeEditor = vscode.window.activeTextEditor;
+      if (!activeEditor) {
+        vscode.window.showWarningMessage('No active file to sync.');
+        return;
+      }
+      await fileSyncManager.syncCurrentFile(activeEditor.document.fileName);
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('csLearningPlatform.pauseSync', () => {
-      vscode.window.showInformationMessage(
-        'Pause sync (Phase 3 implementation)'
-      );
+      fileSyncManager.pause();
+      vscode.window.showInformationMessage('Sync paused — changes will not be saved until resumed.');
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('csLearningPlatform.resumeSync', () => {
-      vscode.window.showInformationMessage(
-        'Resume sync (Phase 3 implementation)'
-      );
+      fileSyncManager.resume();
+      vscode.window.showInformationMessage('Sync resumed.');
     })
   );
 }

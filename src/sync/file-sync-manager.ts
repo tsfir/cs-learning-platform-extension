@@ -14,6 +14,7 @@ export class FileSyncManager {
   private trackedLessons = new Set<string>();
   private currentCourseId: string | null = null;
   private metricsTracker: InputMetricsTracker;
+  private paused = false;
 
   constructor(
     private firebase: FirebaseService,
@@ -83,6 +84,22 @@ export class FileSyncManager {
     this.currentCourseId = null;
   }
 
+  pause(): void {
+    this.paused = true;
+    for (const timeout of this.pendingSaves.values()) clearTimeout(timeout);
+    this.pendingSaves.clear();
+    console.log('[FileSyncManager] Sync paused');
+  }
+
+  resume(): void {
+    this.paused = false;
+    console.log('[FileSyncManager] Sync resumed');
+  }
+
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
   /**
    * Queue a sync with debouncing to avoid multiple syncs while user is typing
    */
@@ -92,6 +109,8 @@ export class FileSyncManager {
     courseId: string,
     delayMs: number = 2000
   ): void {
+    if (this.paused) return;
+
     const existingTimeout = this.pendingSaves.get(filePath);
     if (existingTimeout) {
       clearTimeout(existingTimeout);

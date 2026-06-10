@@ -11,6 +11,7 @@ interface WorkspaceStructure {
   courseSlug?: string;
   basePath: string;
   coursePath: string;
+  currentExercisesPath?: string;
 }
 
 export class WorkspaceManager {
@@ -99,18 +100,28 @@ export class WorkspaceManager {
     const workspaceRoot = this.getWorkspaceRoot();
     const courseFolderName = course?.courseSlug || courseId;
     const topicFolderName = topic?.topicSlug || topicId;
-    const lessonFolderName = lesson?.lessonSlug || lessonId;
+    const isStem = topic?.flatExercises ?? false;
 
     const coursePath = path.join(workspaceRoot, userId, courseFolderName);
     const topicPath = path.join(coursePath, 'topics', topicFolderName);
-    const lessonPath = path.join(topicPath, lessonFolderName);
-    const exercisesPath = path.join(lessonPath, 'exercises');
+
+    // STEM project mode: exercisePath maps lesson files into a real folder tree.
+    // An empty exercisePath means the topic root itself; subdirs like "Services" nest inside it.
+    const lessonPath = isStem
+      ? path.join(topicPath, lesson?.exercisePath ?? '')
+      : path.join(topicPath, lesson?.lessonSlug || lessonId);
+    const exercisesPath = isStem ? lessonPath : path.join(lessonPath, 'exercises');
 
     // Create directory structure
     await this.ensureDirectory(coursePath);
     await this.ensureDirectory(topicPath);
     await this.ensureDirectory(lessonPath);
     await this.ensureDirectory(exercisesPath);
+
+    // STEM mode: ensure a .csproj exists at the topic root so all lesson files compile together
+    if (isStem) {
+      await this.ensureStemCsproj(topicPath, topic?.topicName || topicFolderName);
+    }
 
     // Initialize course project if needed
     if (course) {
@@ -128,6 +139,7 @@ export class WorkspaceManager {
       courseSlug: course?.courseSlug,
       basePath: workspaceRoot,
       coursePath,
+      currentExercisesPath: exercisesPath,
     };
 
     // Load lesson content and create exercise files
@@ -251,6 +263,24 @@ export class WorkspaceManager {
       // Fallback to empty project
       await this.createEmptyProject(projectPath, course);
     }
+  }
+
+  private async ensureStemCsproj(topicPath: string, projectName: string): Promise<void> {
+    const entries = await fs.readdir(topicPath).catch(() => []);
+    if (entries.some(f => f.endsWith('.csproj'))) {
+      return;
+    }
+    const safeName = projectName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const csproj = `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>
+`;
+    await fs.writeFile(path.join(topicPath, `${safeName}.csproj`), csproj, 'utf-8');
   }
 
   private async createEmptyProject(
@@ -498,6 +528,10 @@ obj/
     return this.currentWorkspace;
   }
 
+  getCurrentExercisesPath(): string | null {
+    return this.currentWorkspace?.currentExercisesPath ?? null;
+  }
+
   /**
    * Get exercise file path by section
    */
@@ -513,18 +547,17 @@ obj/
     if (!topic) return null;
 
     const topicFolderName = topic.topicSlug || topic.id;
-    const lessonFolderName = lesson.lessonSlug || lesson.id;
+    const isStem = topic.flatExercises ?? false;
+    const lessonFolder = isStem
+      ? (lesson.exercisePath ?? '')
+      : (lesson.lessonSlug || lesson.id);
 
     const extension = this.getFileExtension(section.language || 'python');
     const fileName = `exercise_${section.orderIndex}_${this.sanitizeFileName(section.title)}.${extension}`;
-    return path.join(
-      this.currentWorkspace.coursePath,
-      'topics',
-      topicFolderName,
-      lessonFolderName,
-      'exercises',
-      fileName
-    );
+    const exercisesPath = isStem
+      ? path.join(this.currentWorkspace.coursePath, 'topics', topicFolderName, lessonFolder)
+      : path.join(this.currentWorkspace.coursePath, 'topics', topicFolderName, lessonFolder, 'exercises');
+    return path.join(exercisesPath, fileName);
   }
 
   /**
